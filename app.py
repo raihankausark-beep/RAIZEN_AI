@@ -29,8 +29,7 @@ def home():
 <head>
     <meta charset="UTF-8">
 
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>RAIZEN AI</title>
 
@@ -212,7 +211,6 @@ async function sendMessage() {
 
     response.textContent = "⚡ RAIZEN is thinking...";
 
-
     input.value = "";
 
 
@@ -266,7 +264,6 @@ async function sendMessage() {
 
 
 </body>
-
 </html>
 """)
 
@@ -277,21 +274,22 @@ def chat(request: ChatRequest):
     if not HF_TOKEN:
         raise HTTPException(
             status_code=500,
-            detail="HF_TOKEN is not configured on the server."
+            detail="HF_TOKEN is not configured."
         )
 
     try:
 
         response = client.chat.completions.create(
 
-            model="Qwen/Qwen2.5-7B-Instruct-1M",
+            model="google/gemma-2-2b-it",
 
             messages=[
                 {
                     "role": "system",
                     "content": (
-                        "You are RAIZEN, a helpful and intelligent AI assistant. "
-                        "Answer clearly and politely."
+                        "You are RAIZEN, an advanced AI assistant. "
+                        "You are helpful, intelligent, friendly, and clear. "
+                        "Give useful answers to the user."
                     )
                 },
                 {
