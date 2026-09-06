@@ -281,7 +281,7 @@ def chat(request: ChatRequest):
 
         response = client.chat.completions.create(
 
-            model="zai-org/GLM-5.3:novita",
+            model="zai-org/GLM-5.3-Flash",
 
             messages=[
                 {
