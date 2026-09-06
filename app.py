@@ -281,7 +281,7 @@ def chat(request: ChatRequest):
 
         response = client.chat.completions.create(
 
-            model="google/gemma-2-2b-it",
+            model="zai-org/GLM-5.3-FLASH",
 
             messages=[
                 {
