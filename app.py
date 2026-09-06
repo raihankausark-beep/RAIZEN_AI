@@ -11,7 +11,7 @@ app = FastAPI()
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 client = InferenceClient(
-    provider="auto",
+    provider="novita",
     api_key=HF_TOKEN
 )
 
@@ -281,7 +281,7 @@ def chat(request: ChatRequest):
 
         response = client.chat.completions.create(
 
-            model="zai-org/GLM-5.3-FLASH",
+            model="zai-org/GLM-5.3:novita",
 
             messages=[
                 {
