@@ -284,7 +284,7 @@ def chat(request: ChatRequest):
 
         response = client.chat.completions.create(
 
-            model="Qwen/Qwen2.5-7B-Instruct",
+            model="Qwen/Qwen2.5-7B-Instruct-1M",
 
             messages=[
                 {
