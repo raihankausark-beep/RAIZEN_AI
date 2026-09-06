@@ -27,141 +27,189 @@ def home():
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAIZEN AI</title>
 
-    <title>RAIZEN AI</title>
+<style>
 
-    <style>
+* {
+    box-sizing: border-box;
+}
 
-        * {
-            box-sizing: border-box;
-        }
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #080d1a;
+    color: white;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
 
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            background: #080d1a;
-            color: white;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
+/* HEADER */
 
-        header {
-            height: 70px;
-            display: flex;
-            align-items: center;
-            padding: 0 30px;
-            border-bottom: 1px solid #20283a;
-        }
+header {
+    height: 70px;
+    display: flex;
+    align-items: center;
+    padding: 0 30px;
+    border-bottom: 1px solid #20283a;
+    background: #0b1120;
+}
 
-        .logo {
-            font-size: 26px;
-            font-weight: bold;
-        }
+.logo {
+    font-size: 25px;
+    font-weight: bold;
+}
 
-        .logo span {
-            color: #9b5cff;
-        }
+.logo span {
+    color: #9b5cff;
+}
 
-        main {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
+/* CHAT AREA */
 
-        h1 {
-            font-size: 42px;
-            margin-bottom: 10px;
-        }
+#chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    max-width: 900px;
+    width: 100%;
+    margin: auto;
+}
 
-        p {
-            color: #9ca7bd;
-            text-align: center;
-        }
+/* MESSAGE BUBBLES */
 
-        .chat-box {
-            width: 100%;
-            max-width: 750px;
-            display: flex;
-            background: #172033;
-            padding: 8px;
-            border-radius: 18px;
-            margin-top: 30px;
-        }
+.message {
+    max-width: 75%;
+    padding: 14px 18px;
+    border-radius: 18px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
 
-        input {
-            flex: 1;
-            background: transparent;
-            border: none;
-            outline: none;
-            color: white;
-            padding: 14px;
-            font-size: 16px;
-        }
+.user {
+    align-self: flex-end;
+    background: #7c3aed;
+    border-bottom-right-radius: 5px;
+}
 
-        button {
-            background: #7c3aed;
-            color: white;
-            border: none;
-            border-radius: 12px;
-            padding: 10px 18px;
-            cursor: pointer;
-            font-size: 16px;
-        }
+.ai {
+    align-self: flex-start;
+    background: #172033;
+    border-bottom-left-radius: 5px;
+}
 
-        #response {
-            margin-top: 25px;
-            max-width: 750px;
-            width: 100%;
-            background: #172033;
-            padding: 18px;
-            border-radius: 15px;
-            display: none;
-            white-space: pre-wrap;
-        }
+/* WELCOME */
 
-        @media (max-width: 600px) {
+.welcome {
+    text-align: center;
+    margin: auto;
+    color: #9ca7bd;
+}
 
-            h1 {
-                font-size: 30px;
-            }
+.welcome h1 {
+    color: white;
+    font-size: 42px;
+    margin-bottom: 10px;
+}
 
-            header {
-                padding: 0 20px;
-            }
+/* INPUT */
 
-        }
+.input-area {
+    padding: 18px;
+    border-top: 1px solid #20283a;
+    background: #0b1120;
+}
 
-    </style>
+.input-box {
+    max-width: 900px;
+    margin: auto;
+    display: flex;
+    background: #172033;
+    border-radius: 18px;
+    padding: 8px;
+}
 
+input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: white;
+    padding: 14px;
+    font-size: 16px;
+}
+
+button {
+    background: #7c3aed;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 10px 20px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+button:hover {
+    opacity: 0.9;
+}
+
+.typing {
+    opacity: 0.7;
+    font-style: italic;
+}
+
+@media (max-width: 600px) {
+
+    #chat {
+        padding: 15px;
+    }
+
+    .message {
+        max-width: 90%;
+    }
+
+    header {
+        padding: 0 20px;
+    }
+
+    .welcome h1 {
+        font-size: 30px;
+    }
+
+}
+
+</style>
 </head>
 
 
 <body>
 
 <header>
-
     <div class="logo">
         ⚡ <span>RAIZEN</span> AI
     </div>
-
 </header>
 
 
-<main>
+<div id="chat">
 
-    <h1>Welcome to RAIZEN ⚡</h1>
+    <div class="welcome" id="welcome">
+        <h1>Welcome to RAIZEN ⚡</h1>
+        <p>Your Advanced AI Assistant</p>
+    </div>
 
-    <p>Your Advanced AI Assistant</p>
+</div>
 
 
-    <div class="chat-box">
+<div class="input-area">
+
+    <div class="input-box">
 
         <input
             id="message"
@@ -176,13 +224,13 @@ def home():
 
     </div>
 
-
-    <div id="response"></div>
-
-</main>
+</div>
 
 
 <script>
+
+const chat = document.getElementById("chat");
+
 
 function handleKey(event) {
 
@@ -193,25 +241,50 @@ function handleKey(event) {
 }
 
 
+function addMessage(text, type) {
+
+    const welcome = document.getElementById("welcome");
+
+    if (welcome) {
+        welcome.remove();
+    }
+
+    const message = document.createElement("div");
+
+    message.className = "message " + type;
+
+    message.textContent = text;
+
+    chat.appendChild(message);
+
+    chat.scrollTop = chat.scrollHeight;
+
+    return message;
+}
+
+
 async function sendMessage() {
 
     const input = document.getElementById("message");
 
-    const response = document.getElementById("response");
-
     const text = input.value.trim();
-
 
     if (!text) {
         return;
     }
 
 
-    response.style.display = "block";
-
-    response.textContent = "⚡ RAIZEN is thinking...";
+    addMessage(text, "user");
 
     input.value = "";
+
+    input.disabled = true;
+
+
+    const typing = addMessage(
+        "⚡ RAIZEN is thinking...",
+        "ai typing"
+    );
 
 
     try {
@@ -234,18 +307,25 @@ async function sendMessage() {
         const data = await result.json();
 
 
+        typing.remove();
+
+
         if (data.reply) {
 
-            response.textContent =
-                "⚡ RAIZEN: " + data.reply;
+            addMessage(
+                "⚡ RAIZEN: " + data.reply,
+                "ai"
+            );
 
         }
 
         else {
 
-            response.textContent =
+            addMessage(
                 "⚠️ Error: " +
-                (data.detail || "Unknown error");
+                (data.detail || "Unknown error"),
+                "ai"
+            );
 
         }
 
@@ -253,12 +333,22 @@ async function sendMessage() {
 
     catch (error) {
 
-        response.textContent =
-            "⚠️ Could not connect to RAIZEN.";
+        typing.remove();
+
+        addMessage(
+            "⚠️ Could not connect to RAIZEN.",
+            "ai"
+        );
 
     }
 
+
+    input.disabled = false;
+
+    input.focus();
+
 }
+
 
 </script>
 
@@ -269,7 +359,7 @@ async function sendMessage() {
 
 
 @app.post("/chat")
-def chat(request: ChatRequest):
+def chat_ai(request: ChatRequest):
 
     if not HF_TOKEN:
         raise HTTPException(
@@ -287,9 +377,10 @@ def chat(request: ChatRequest):
                 {
                     "role": "system",
                     "content": (
-                        "You are RAIZEN, an advanced AI assistant. "
-                        "You are helpful, intelligent, friendly, and clear. "
-                        "Give useful answers to the user."
+                        "You are RAIZEN, an advanced futuristic AI assistant. "
+                        "You are intelligent, helpful, friendly and confident. "
+                        "Give clear and useful answers. "
+                        "Your name is RAIZEN."
                     )
                 },
                 {
@@ -321,6 +412,5 @@ def health():
 
     return {
         "status": "RAIZEN AI is online",
-        "token_loaded": bool(HF_TOKEN),
-        "token_length": len(HF_TOKEN) if HF_TOKEN else 0
+        "token_loaded": bool(HF_TOKEN)
     }
