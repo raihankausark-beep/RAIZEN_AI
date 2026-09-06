@@ -10,9 +10,10 @@ app = FastAPI()
 
 HF_TOKEN = os.getenv("HF_TOKEN")
 
-client = InferenceClient(provider="auto",
-                         api_key=HF_TOKEN
-                        )
+client = InferenceClient(
+    provider="auto",
+    api_key=HF_TOKEN
+)
 
 
 class ChatRequest(BaseModel):
@@ -24,13 +25,17 @@ def home():
     return HTMLResponse("""
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
 
     <title>RAIZEN AI</title>
 
     <style>
+
         * {
             box-sizing: border-box;
         }
@@ -121,20 +126,41 @@ def home():
             display: none;
             white-space: pre-wrap;
         }
+
+        @media (max-width: 600px) {
+
+            h1 {
+                font-size: 30px;
+            }
+
+            header {
+                padding: 0 20px;
+            }
+
+        }
+
     </style>
+
 </head>
+
 
 <body>
 
 <header>
-    <div class="logo">⚡ <span>RAIZEN</span> AI</div>
+
+    <div class="logo">
+        ⚡ <span>RAIZEN</span> AI
+    </div>
+
 </header>
+
 
 <main>
 
     <h1>Welcome to RAIZEN ⚡</h1>
 
     <p>Your Advanced AI Assistant</p>
+
 
     <div class="chat-box">
 
@@ -145,42 +171,55 @@ def home():
             onkeydown="handleKey(event)"
         >
 
-        <button onclick="sendMessage()">Send</button>
+        <button onclick="sendMessage()">
+            Send
+        </button>
 
     </div>
+
 
     <div id="response"></div>
 
 </main>
 
+
 <script>
 
 function handleKey(event) {
+
     if (event.key === "Enter") {
         sendMessage();
     }
+
 }
 
 
 async function sendMessage() {
 
     const input = document.getElementById("message");
+
     const response = document.getElementById("response");
 
     const text = input.value.trim();
+
 
     if (!text) {
         return;
     }
 
+
     response.style.display = "block";
+
     response.textContent = "⚡ RAIZEN is thinking...";
 
+
     input.value = "";
+
 
     try {
 
         const result = await fetch("/chat", {
+
             method: "POST",
 
             headers: {
@@ -190,27 +229,44 @@ async function sendMessage() {
             body: JSON.stringify({
                 message: text
             })
+
         });
+
 
         const data = await result.json();
 
+
         if (data.reply) {
-            response.textContent = "⚡ RAIZEN: " + data.reply;
-        } else {
+
             response.textContent =
-                "⚠️ Error: " + (data.detail || "Unknown error");
+                "⚡ RAIZEN: " + data.reply;
+
         }
 
-    } catch (error) {
+        else {
+
+            response.textContent =
+                "⚠️ Error: " +
+                (data.detail || "Unknown error");
+
+        }
+
+    }
+
+    catch (error) {
 
         response.textContent =
             "⚠️ Could not connect to RAIZEN.";
+
     }
+
 }
 
 </script>
 
+
 </body>
+
 </html>
 """)
 
@@ -218,15 +274,25 @@ async function sendMessage() {
 @app.post("/chat")
 def chat(request: ChatRequest):
 
+    if not HF_TOKEN:
+        raise HTTPException(
+            status_code=500,
+            detail="HF_TOKEN is not configured on the server."
+        )
+
     try:
 
         response = client.chat.completions.create(
+
             model="Qwen/Qwen2.5-7B-Instruct",
 
             messages=[
                 {
                     "role": "system",
-                    "content": "You are RAIZEN, a helpful and intelligent AI assistant. Answer clearly and politely."
+                    "content": (
+                        "You are RAIZEN, a helpful and intelligent AI assistant. "
+                        "Answer clearly and politely."
+                    )
                 },
                 {
                     "role": "user",
@@ -235,11 +301,14 @@ def chat(request: ChatRequest):
             ],
 
             max_tokens=500
+
         )
+
 
         return {
             "reply": response.choices[0].message.content
         }
+
 
     except Exception as e:
 
@@ -251,6 +320,9 @@ def chat(request: ChatRequest):
 
 @app.get("/health")
 def health():
+
     return {
-        "status": "RAIZEN AI is online"
+        "status": "RAIZEN AI is online",
+        "token_loaded": bool(HF_TOKEN),
+        "token_length": len(HF_TOKEN) if HF_TOKEN else 0
     }
