@@ -10,7 +10,9 @@ app = FastAPI()
 
 HF_TOKEN = os.getenv("HF_TOKEN")
 
-client = InferenceClient(token=HF_TOKEN)
+client = InferenceClient(provider="auto",
+                         api_key=HF_TOKEN
+                        )
 
 
 class ChatRequest(BaseModel):
