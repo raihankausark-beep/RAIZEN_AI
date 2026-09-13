@@ -6,4 +6,4 @@
 fastapi
 uvicorn[standard]
 huggingface_hub
-ddgs
+
