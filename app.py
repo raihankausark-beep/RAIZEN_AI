@@ -1022,6 +1022,78 @@ try {
 @app.get("/", response_class=HTMLResponse)
 async def home():
     return HTMLResponse(content=HTML)
+    @app.post("/vision")
+async def vision(
+    file: UploadFile = File(...),
+    message: str = "Describe this image."
+):
+    filename = file.filename or "image"
+
+    allowed_types = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp"
+    }
+
+    extension = os.path.splitext(filename.lower())[1]
+
+    if extension not in allowed_types:
+        return {
+            "reply": "⚠️ Please upload a PNG, JPG, JPEG, or WEBP image."
+        }
+
+    try:
+        raw_bytes = await file.read()
+
+        if len(raw_bytes) > 8 * 1024 * 1024:
+            return {
+                "reply": "⚠️ Image is too large. Maximum size is 8 MB."
+            }
+
+        mime_type = allowed_types[extension]
+
+        image_base64 = base64.b64encode(raw_bytes).decode("utf-8")
+
+        data_url = f"data:{mime_type};base64,{image_base64}"
+
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": data_url
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": message
+                    }
+                ]
+            }
+        ]
+
+        response = vision_client.chat.completions.create(
+            model=VISION_MODEL,
+            messages=messages,
+            max_tokens=700
+        )
+
+        reply = response.choices[0].message.content
+
+        if not reply:
+            reply = "Sorry, I could not understand the image."
+
+        return {"reply": reply}
+
+    except Exception as error:
+        print("VISION ERROR:", error)
+
+        return {
+            "reply": "⚠️ I couldn't analyze this image right now."
+        }
 
 
 
