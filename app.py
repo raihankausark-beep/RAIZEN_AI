@@ -9,27 +9,16 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
 
-
 app = FastAPI()
 
-
-# =========================
-# HUGGING FACE CONFIG
-# =========================
-
 HF_TOKEN = os.getenv("HF_TOKEN")
+MODEL = "zai-org/GLM-5.3-Flash"
 
 client = InferenceClient(
     provider="novita",
     api_key=HF_TOKEN
 )
 
-MODEL = "zai-org/GLM-5.3-Flash"
-
-
-# =========================
-# REQUEST MODEL
-# =========================
 
 class ChatRequest(BaseModel):
     message: str
@@ -38,10 +27,6 @@ class ChatRequest(BaseModel):
     response_style: str = "Balanced"
 
 
-# =========================
-# PERSONALITY
-# =========================
-
 PERSONALITIES = {
     "Friendly": "Be friendly, casual and approachable.",
     "Teacher": "Act like a patient teacher. Explain concepts simply and clearly.",
@@ -49,17 +34,12 @@ PERSONALITIES = {
     "Professional": "Use a professional, polished and formal communication style."
 }
 
-
 STYLES = {
     "Short": "Keep answers concise and direct.",
     "Balanced": "Give a balanced answer with enough explanation but avoid unnecessary length.",
     "Detailed": "Give detailed explanations with useful examples when appropriate."
 }
 
-
-# =========================
-# WEB SEARCH DETECTION
-# =========================
 
 def needs_web_search(message):
     keywords = [
@@ -85,10 +65,6 @@ def needs_web_search(message):
         for keyword in keywords
     )
 
-
-# =========================
-# WEB SEARCH
-# =========================
 
 def web_search(query):
     try:
@@ -121,9 +97,7 @@ def web_search(query):
 
         results = []
 
-        matches = pattern.findall(page)
-
-        for link, title in matches[:5]:
+        for link, title in pattern.findall(page)[:5]:
 
             clean_title = re.sub(
                 r"<.*?>",
@@ -146,10 +120,6 @@ def web_search(query):
         return []
 
 
-# =========================
-# HOME PAGE
-# =========================
-
 @app.get(
     "/",
     response_class=HTMLResponse
@@ -158,7 +128,6 @@ def home():
 
     return """
 <!DOCTYPE html>
-
 <html>
 
 <head>
@@ -182,7 +151,7 @@ body {
 }
 
 .header {
-    padding: 18px;
+    padding: 20px;
     text-align: center;
     background: #0d1424;
     border-bottom: 1px solid #202a40;
@@ -210,7 +179,7 @@ body {
 select,
 button,
 textarea {
-    font-family: inherit;
+    font-family: Arial, sans-serif;
 }
 
 select {
@@ -221,13 +190,16 @@ select {
     border-radius: 8px;
 }
 
+button {
+    cursor: pointer;
+}
+
 .action {
     background: #111a2d;
     color: white;
     border: 1px solid #293653;
     padding: 9px 13px;
     border-radius: 8px;
-    cursor: pointer;
 }
 
 .action:hover {
@@ -286,11 +258,6 @@ textarea {
     border: none;
     border-radius: 10px;
     padding: 0 20px;
-    cursor: pointer;
-}
-
-.send:hover {
-    background: #1d4ed8;
 }
 
 @media (max-width: 600px) {
@@ -315,9 +282,7 @@ textarea {
 
 </head>
 
-
 <body>
-
 
 <div class="header">
 
@@ -327,35 +292,24 @@ textarea {
 
 </div>
 
-
 <div class="controls">
-
 
 <select id="personality">
 
 <option>Friendly</option>
-
 <option>Teacher</option>
-
 <option>Coding Assistant</option>
-
 <option>Professional</option>
 
 </select>
 
-
 <select id="style">
 
 <option>Short</option>
-
-<option selected>
-Balanced
-</option>
-
+<option selected>Balanced</option>
 <option>Detailed</option>
 
 </select>
-
 
 <button
     class="action"
@@ -365,7 +319,6 @@ New Chat
 
 </button>
 
-
 <button
     class="action"
     onclick="clearChat()">
@@ -374,25 +327,20 @@ Clear Chat
 
 </button>
 
-
 </div>
-
 
 <div
     id="chat"
     class="chat">
 </div>
 
-
 <div class="search-box">
-
 
 <textarea
     id="message"
     placeholder="Ask RAIZEN anything..."
     onkeydown="handleKey(event)">
 </textarea>
-
 
 <button
     class="send"
@@ -402,12 +350,9 @@ Send
 
 </button>
 
-
 </div>
 
-
 <script>
-
 
 let history = JSON.parse(
     localStorage.getItem(
@@ -441,18 +386,14 @@ function displayMessage(
             "div"
         );
 
-
     div.className =
         role === "user"
         ? "message user"
         : "message raizen";
 
-
     div.textContent = text;
 
-
     chat.appendChild(div);
-
 
     window.scrollTo(
         0,
@@ -467,7 +408,6 @@ function loadHistory() {
     document.getElementById(
         "chat"
     ).innerHTML = "";
-
 
     history.forEach(
         function(item) {
@@ -512,54 +452,41 @@ async function sendMessage() {
             "message"
         );
 
-
     const message =
         input.value.trim();
-
 
     if (!message) {
         return;
     }
-
 
     displayMessage(
         "user",
         message
     );
 
-
     history.push({
-
         role: "user",
-
         content: message
-
     });
-
 
     saveHistory();
 
-
     input.value = "";
-
 
     displayMessage(
         "assistant",
         "🌐 RAIZEN is thinking..."
     );
 
-
     const personality =
         document.getElementById(
             "personality"
         ).value;
 
-
     const responseStyle =
         document.getElementById(
             "style"
         ).value;
-
 
     try {
 
@@ -567,7 +494,6 @@ async function sendMessage() {
             await fetch(
                 "/chat",
                 {
-
                     method: "POST",
 
                     headers: {
@@ -590,20 +516,16 @@ async function sendMessage() {
                             responseStyle
 
                     })
-
                 }
             );
 
-
         const data =
             await response.json();
-
 
         const chat =
             document.getElementById(
                 "chat"
             );
-
 
         if (chat.lastChild) {
 
@@ -612,7 +534,6 @@ async function sendMessage() {
             );
 
         }
-
 
         if (!response.ok) {
 
@@ -626,12 +547,10 @@ async function sendMessage() {
 
         }
 
-
         displayMessage(
             "assistant",
             data.reply
         );
-
 
         history.push({
 
@@ -641,9 +560,7 @@ async function sendMessage() {
 
         });
 
-
         saveHistory();
-
 
     } catch (error) {
 
@@ -652,7 +569,6 @@ async function sendMessage() {
                 "chat"
             );
 
-
         if (chat.lastChild) {
 
             chat.removeChild(
@@ -660,7 +576,6 @@ async function sendMessage() {
             );
 
         }
-
 
         displayMessage(
             "assistant",
@@ -690,19 +605,13 @@ function handleKey(event) {
 
 loadHistory();
 
-
 </script>
-
 
 </body>
 
 </html>
 """
 
-
-# =========================
-# CHAT ENDPOINT
-# =========================
 
 @app.post("/chat")
 def chat(request: ChatRequest):
@@ -717,27 +626,17 @@ def chat(request: ChatRequest):
             )
         )
 
+    personality = PERSONALITIES.get(
+        request.personality,
+        PERSONALITIES["Friendly"]
+    )
 
-    personality =
-        PERSONALITIES.get(
-            request.personality,
-            PERSONALITIES["Friendly"]
-        )
-
-
-    response_style =
-        STYLES.get(
-            request.response_style,
-            STYLES["Balanced"]
-        )
-
-
-    # =========================
-    # SEARCH
-    # =========================
+    response_style = STYLES.get(
+        request.response_style,
+        STYLES["Balanced"]
+    )
 
     search_context = ""
-
 
     if needs_web_search(
         request.message
@@ -747,7 +646,6 @@ def chat(request: ChatRequest):
             request.message
         )
 
-
         if results:
 
             search_context = (
@@ -755,7 +653,6 @@ def chat(request: ChatRequest):
                 "Use these results as "
                 "supporting information:\n"
             )
-
 
             for index, result in enumerate(
                 results,
@@ -769,19 +666,14 @@ def chat(request: ChatRequest):
                     f"{result['href']}\n"
                 )
 
-
-    # =========================
-    # SYSTEM PROMPT
-    # =========================
-
     system_prompt = f"""
 You are RAIZEN, an advanced futuristic AI assistant.
 
 You were created and developed by Raihan Kausar.
 
 If someone asks who invented, created, developed,
-or made you, say that Raihan Kausar created
-and developed you.
+or made you, say that Raihan Kausar created and
+developed you.
 
 Personality:
 {personality}
@@ -800,25 +692,16 @@ Rules:
 - Explain things clearly.
 """
 
-
     if search_context:
 
         system_prompt += search_context
 
-
-    # =========================
-    # MESSAGE HISTORY
-    # =========================
-
     messages = [
-
         {
             "role": "system",
             "content": system_prompt
         }
-
     ]
-
 
     for item in request.history[-12:]:
 
@@ -827,12 +710,10 @@ Rules:
             "user"
         )
 
-
         content = item.get(
             "content",
             ""
         )
-
 
         if (
             role in ["user", "assistant"]
@@ -847,56 +728,34 @@ Rules:
 
             })
 
-
-    # =========================
-    # AI RESPONSE
-    # =========================
-
     try:
 
-        response =
-            client.chat.completions.create(
-                model=MODEL,
-                messages=messages,
-                max_tokens=500
-            )
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            max_tokens=500
+        )
 
-
-        reply =
-            response.choices[0].message.content
-
+        reply = response.choices[0].message.content
 
         return {
             "reply": reply
         }
 
-
     except Exception as error:
 
         raise HTTPException(
-
             status_code=500,
-
             detail=f"AI error: {str(error)}"
-
         )
 
-
-# =========================
-# HEALTH CHECK
-# =========================
 
 @app.get("/health")
 def health():
 
     return {
-
         "status": "RAIZEN online",
-
         "token_loaded": bool(HF_TOKEN),
-
         "model": MODEL,
-
         "web_search": True
-
     }
