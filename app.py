@@ -546,20 +546,12 @@ def weather_wttr(city):
 
 def weather_search(city):
 
-    result = weather_open_meteo(
-        city
-    )
-
+    result = weather_open_meteo(city):
     if result:
         return result
+        
+    
 
-
-    result = weather_wttr(
-        city
-    )
-
-    if result:
-        return result
 
 
     return None
