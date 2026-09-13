@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import base64
 from datetime import datetime, timezone
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -19,6 +20,13 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 MODEL = "zai-org/GLM-5.3-Flash"
 
 client = InferenceClient(
+    provider="novita",
+    api_key=HF_TOKEN
+)
+
+VISION_MODEL = "Qwen/Qwen2.5-VL-3B-Instruct"
+
+vision_client = InferenceClient(
     provider="novita",
     api_key=HF_TOKEN
 )
@@ -688,6 +696,25 @@ select,
     opacity: 0.7;
 }
 
+.vision-panel {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.vision-input {
+    max-width: 100%;
+    color: #cbd5e1;
+    font-size: 13px;
+}
+
+.vision-name {
+    font-size: 12px;
+    opacity: 0.7;
+}
+
 .small {
     text-align: center;
     opacity: 0.5;
@@ -753,6 +780,13 @@ select,
 <button class="control" onclick="clearDocument()">Remove document</button>
 </div>
 
+<div class="vision-panel">
+<input id="visionInput" class="vision-input" type="file"
+       accept="image/png,image/jpeg,image/webp">
+<span id="visionName" class="vision-name">No image selected</span>
+<button class="control" onclick="clearVision()">Remove image</button>
+</div>
+
 <div class="input-area">
 
 <input
@@ -775,6 +809,7 @@ RAIZEN â¢ Created and developed by Raihan Kausar
 let chatHistory = [];
 let documentText = "";
 let documentName = "";
+let visionFile = null;
 
 document.getElementById("fileInput").addEventListener("change", async function() {
     const file = this.files[0];
@@ -820,6 +855,65 @@ function clearDocument() {
     documentName = "";
     document.getElementById("fileInput").value = "";
     document.getElementById("fileName").textContent = "No document selected";
+}
+
+document.getElementById("visionInput").addEventListener("change", function() {
+    const file = this.files[0];
+    if (!file) return;
+
+    const allowed = ["image/png", "image/jpeg", "image/webp"];
+    if (!allowed.includes(file.type)) {
+        displayMessage(
+            "assistant",
+            "â ï¸ Please select a PNG, JPG/JPEG, or WEBP image."
+        );
+        this.value = "";
+        return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+        displayMessage(
+            "assistant",
+            "â ï¸ Image is too large. Maximum size is 8 MB."
+        );
+        this.value = "";
+        return;
+    }
+
+    visionFile = file;
+    document.getElementById("visionName").textContent =
+        "ð¼ï¸ " + file.name + " ready";
+
+    displayMessage(
+        "assistant",
+        "ð¼ï¸ " + file.name +
+        " is ready. Ask me to describe it, read text from it, or explain what is shown."
+    );
+});
+
+function clearVision() {
+    visionFile = null;
+    document.getElementById("visionInput").value = "";
+    document.getElementById("visionName").textContent = "No image selected";
+}
+
+async function sendVisionMessage(question) {
+    const formData = new FormData();
+    formData.append("file", visionFile);
+    formData.append("question", question);
+
+    const response = await fetch("/vision", {
+        method: "POST",
+        body: formData
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || data.error) {
+        throw new Error(data.error || "Vision request failed.");
+    }
+
+    return data.reply;
 }
 
 function saveHistory() {
@@ -892,11 +986,30 @@ async function sendMessage() {
 
     const thinking = displayMessage(
         "assistant",
-        "â¡ RAIZEN is thinking...",
+        visionFile
+            ? "ðï¸ RAIZEN is analyzing the image..."
+            : "â¡ RAIZEN is thinking...",
         "thinking"
     );
 
     try {
+        if (visionFile) {
+            const reply = await sendVisionMessage(message);
+
+            thinking.remove();
+            displayMessage("assistant", reply);
+
+            chatHistory.push({
+                role: "assistant",
+                content: reply
+            });
+
+            saveHistory();
+            button.disabled = false;
+            input.focus();
+            return;
+        }
+
         const response = await fetch("/chat", {
             method: "POST",
             headers: {
@@ -1040,6 +1153,88 @@ async def upload_file(file: UploadFile = File(...)):
     except Exception as error:
         print("FILE ERROR:", error)
         return {"error": "Could not read this document."}
+
+
+@app.post("/vision")
+async def vision(file: UploadFile = File(...), question: str = ""):
+    filename = file.filename or "image"
+    content_type = file.content_type or ""
+
+    allowed_types = {
+        "image/png": "png",
+        "image/jpeg": "jpeg",
+        "image/webp": "webp"
+    }
+
+    if content_type not in allowed_types:
+        return {
+            "error": "Unsupported image type. Please use PNG, JPG/JPEG, or WEBP."
+        }
+
+    try:
+        raw_bytes = await file.read()
+
+        if len(raw_bytes) > 8 * 1024 * 1024:
+            return {"error": "Image is too large. Maximum size is 8 MB."}
+
+        encoded = base64.b64encode(raw_bytes).decode("utf-8")
+        data_url = f"data:{content_type};base64,{encoded}"
+
+        user_question = question.strip()
+        if not user_question:
+            user_question = (
+                "Describe this image clearly. Mention important visible details "
+                "and read any clearly visible text when possible."
+            )
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are RAIZEN's vision assistant. Analyze the supplied image "
+                    "carefully. Be accurate, concise, and do not invent details. "
+                    "If text is blurry or unreadable, say so."
+                )
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": data_url}
+                    },
+                    {
+                        "type": "text",
+                        "text": user_question
+                    }
+                ]
+            }
+        ]
+
+        response = vision_client.chat.completions.create(
+            model=VISION_MODEL,
+            messages=messages,
+            max_tokens=600
+        )
+
+        reply = response.choices[0].message.content
+
+        if not reply:
+            return {"error": "The vision model returned an empty response."}
+
+        return {
+            "reply": reply,
+            "model": VISION_MODEL
+        }
+
+    except Exception as error:
+        print("VISION ERROR:", error)
+        return {
+            "error": (
+                "Vision is temporarily unavailable. "
+                "Please try the image again."
+            )
+        }
 
 
 @app.post("/chat")
@@ -1200,5 +1395,7 @@ async def health():
         "status": "ok",
         "token_loaded": bool(HF_TOKEN),
         "model": MODEL,
+        "vision_model": VISION_MODEL,
+        "vision": True,
         "live_search": True
     }
