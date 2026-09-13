@@ -54,15 +54,15 @@ def needs_live_search(message):
         "this month",
         "search",
         "what happened",
-        "trending"
+        "trending",
+        "weather",
+        "temperature",
+        "forecast"
     ]
 
     text = message.lower()
 
-    return any(
-        word in text
-        for word in words
-    )
+    return any(word in text for word in words)
 
 
 def google_news_search(query):
@@ -75,15 +75,11 @@ def google_news_search(query):
     request = Request(
         url,
         headers={
-            "User-Agent": "Mozilla/5.0"
+            "User-Agent": "Mozilla/5.0 RAIZEN/1.0"
         }
     )
 
-    with urlopen(
-        request,
-        timeout=12
-    ) as response:
-
+    with urlopen(request, timeout=15) as response:
         xml_data = response.read()
 
     root = ET.fromstring(xml_data)
@@ -91,24 +87,11 @@ def google_news_search(query):
     results = []
 
     for item in root.findall(".//item")[:6]:
-
-        title = item.findtext(
-            "title",
-            ""
-        )
-
-        link = item.findtext(
-            "link",
-            ""
-        )
-
-        published = item.findtext(
-            "pubDate",
-            ""
-        )
+        title = item.findtext("title", "").strip()
+        link = item.findtext("link", "").strip()
+        published = item.findtext("pubDate", "").strip()
 
         if title and link:
-
             results.append({
                 "title": title,
                 "link": link,
@@ -133,92 +116,235 @@ def wikipedia_search(query):
         }
     )
 
-    with urlopen(
-        request,
-        timeout=12
-    ) as response:
-
+    with urlopen(request, timeout=15) as response:
         data = json.loads(
             response.read().decode("utf-8")
         )
 
     results = []
 
-    for item in data.get(
-        "query",
-        {}
-    ).get(
-        "search",
-        []
-    )[:5]:
-
-        title = item.get(
-            "title",
-            ""
-        )
+    for item in data.get("query", {}).get("search", [])[:5]:
+        title = item.get("title", "")
 
         snippet = re.sub(
             r"<.*?>",
             "",
-            item.get(
-                "snippet",
-                ""
-            )
+            item.get("snippet", "")
         )
 
         if title:
-
             results.append({
                 "title": title,
                 "snippet": snippet,
                 "link": (
                     "https://en.wikipedia.org/wiki/"
-                    + quote(
-                        title.replace(
-                            " ",
-                            "_"
-                        )
-                    )
+                    + quote(title.replace(" ", "_"))
                 )
             })
 
     return results
 
 
-def live_search(query):
+def weather_search(city):
+    geo_url = (
+        "https://geocoding-api.open-meteo.com/v1/search"
+        "?name="
+        + quote(city)
+        + "&count=1&language=en&format=json"
+    )
 
-    results = []
+    geo_request = Request(
+        geo_url,
+        headers={
+            "User-Agent": "RAIZEN/1.0"
+        }
+    )
 
-    try:
-
-        news = google_news_search(
-            query
+    with urlopen(geo_request, timeout=15) as response:
+        geo_data = json.loads(
+            response.read().decode("utf-8")
         )
 
-        for item in news:
+    locations = geo_data.get("results", [])
 
-            results.append(
-                "NEWS: "
-                + item["title"]
-                + " | "
-                + item["published"]
-                + " | "
-                + item["link"]
-            )
+    if not locations:
+        return []
 
-    except Exception:
-        pass
+    location = locations[0]
 
-    if not results:
+    latitude = location["latitude"]
+    longitude = location["longitude"]
+
+    weather_url = (
+        "https://api.open-meteo.com/v1/forecast"
+        "?latitude="
+        + str(latitude)
+        + "&longitude="
+        + str(longitude)
+        + "&current="
+        "temperature_2m,"
+        "relative_humidity_2m,"
+        "apparent_temperature,"
+        "precipitation,"
+        "weather_code,"
+        "wind_speed_10m"
+        "&timezone=auto"
+    )
+
+    weather_request = Request(
+        weather_url,
+        headers={
+            "User-Agent": "RAIZEN/1.0"
+        }
+    )
+
+    with urlopen(weather_request, timeout=15) as response:
+        weather_data = json.loads(
+            response.read().decode("utf-8")
+        )
+
+    current = weather_data.get("current", {})
+
+    if not current:
+        return []
+
+    return [{
+        "city": location.get("name", city),
+        "country": location.get("country", ""),
+        "temperature": current.get("temperature_2m"),
+        "feels_like": current.get("apparent_temperature"),
+        "humidity": current.get("relative_humidity_2m"),
+        "rain": current.get("precipitation"),
+        "wind": current.get("wind_speed_10m"),
+        "time": current.get("time")
+    }]
+
+
+def extract_city(message):
+    text = message.strip()
+
+    patterns = [
+        r"weather\s+(?:in|at|for)\s+(.+)",
+        r"temperature\s+(?:in|at|for)\s+(.+)",
+        r"forecast\s+(?:in|for)\s+(.+)"
+    ]
+
+    for pattern in patterns:
+        match = re.search(
+            pattern,
+            text,
+            re.IGNORECASE
+        )
+
+        if match:
+            city = match.group(1)
+
+            city = re.split(
+                r"\b(?:today|tomorrow|now|right now)\b",
+                city,
+                flags=re.IGNORECASE
+            )[0]
+
+            return city.strip(" ?.,!")
+
+    return None
+
+
+def live_search(query):
+    text = query.lower()
+
+    # WEATHER
+    if any(
+        word in text
+        for word in [
+            "weather",
+            "temperature",
+            "forecast"
+        ]
+    ):
+        city = extract_city(query)
+
+        if not city:
+            return [
+                "WEATHER_ERROR: Please specify the city name."
+            ]
 
         try:
+            weather = weather_search(city)
 
-            wiki = wikipedia_search(
-                query
-            )
+            if weather:
+                item = weather[0]
+
+                return [
+                    "LIVE WEATHER: "
+                    + item["city"]
+                    + ", "
+                    + item["country"]
+                    + " | Temperature: "
+                    + str(item["temperature"])
+                    + "°C"
+                    + " | Feels like: "
+                    + str(item["feels_like"])
+                    + "°C"
+                    + " | Humidity: "
+                    + str(item["humidity"])
+                    + "%"
+                    + " | Rain: "
+                    + str(item["rain"])
+                    + " mm"
+                    + " | Wind: "
+                    + str(item["wind"])
+                    + " km/h"
+                    + " | Updated: "
+                    + str(item["time"])
+                ]
+
+            return [
+                "WEATHER_ERROR: No weather data found."
+            ]
+
+        except Exception as error:
+            return [
+                "WEATHER_ERROR: "
+                + str(error)
+            ]
+
+    # NEWS
+    news_error = "Unknown error."
+
+    try:
+        news = google_news_search(query)
+
+        if news:
+            results = []
+
+            for item in news:
+                results.append(
+                    "NEWS: "
+                    + item["title"]
+                    + " | "
+                    + item["published"]
+                    + " | "
+                    + item["link"]
+                )
+
+            return results
+
+        news_error = "No Google News results."
+
+    except Exception as error:
+        news_error = str(error)
+
+    # WIKIPEDIA FALLBACK
+    wiki_error = "Unknown error."
+
+    try:
+        wiki = wikipedia_search(query)
+
+        if wiki:
+            results = []
 
             for item in wiki:
-
                 results.append(
                     "REFERENCE: "
                     + item["title"]
@@ -228,16 +354,23 @@ def live_search(query):
                     + item["link"]
                 )
 
-        except Exception:
-            pass
+            return results
 
-    return results
+        wiki_error = "No Wikipedia results."
+
+    except Exception as error:
+        wiki_error = str(error)
+
+    return [
+        "LIVE_SEARCH_ERROR: "
+        "Google News failed: "
+        + news_error
+        + " | Wikipedia failed: "
+        + wiki_error
+    ]
 
 
-@app.get(
-    "/",
-    response_class=HTMLResponse
-)
+@app.get("/", response_class=HTMLResponse)
 def home():
 
     return """
@@ -367,6 +500,10 @@ textarea {
     border-radius: 10px;
     padding: 0 20px;
     cursor: pointer;
+}
+
+.send:hover {
+    background: #1d4ed8;
 }
 
 @media (max-width: 600px) {
@@ -671,11 +808,8 @@ async function sendMessage() {
         );
 
         history.push({
-
             role: "assistant",
-
             content: data.reply
-
         });
 
         saveHistory();
@@ -756,13 +890,9 @@ def chat(request: ChatRequest):
 
     live_context = ""
 
-    if needs_live_search(
-        request.message
-    ):
+    if needs_live_search(request.message):
 
-        results = live_search(
-            request.message
-        )
+        results = live_search(request.message)
 
         if results:
 
@@ -808,6 +938,13 @@ Rules:
 - Never invent sources.
 - Never pretend you searched if no live results exist.
 - Keep answers natural and easy to understand.
+- If LIVE_SEARCH_ERROR appears, clearly tell the user
+  that live search could not retrieve data.
+- If WEATHER_ERROR appears, clearly explain that weather
+  data could not be retrieved or that a city name is required.
+- Do not treat an error message as real-world information.
+- When live information is available, mention that the
+  information is live/current.
 
 {live_context}
 """
@@ -837,11 +974,8 @@ Rules:
         ):
 
             messages.append({
-
                 "role": role,
-
                 "content": content
-
             })
 
     try:
