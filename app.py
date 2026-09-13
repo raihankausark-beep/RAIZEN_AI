@@ -11,7 +11,6 @@ app = FastAPI()
 
 HF_TOKEN = os.getenv("HF_TOKEN")
 
-# YOUR WORKING AI SETUP
 client = InferenceClient(
     provider="novita",
     api_key=HF_TOKEN
@@ -21,6 +20,8 @@ client = InferenceClient(
 class ChatRequest(BaseModel):
     message: str
     history: list = []
+    personality: str = "Friendly"
+    response_style: str = "Balanced"
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -48,6 +49,10 @@ body {
     font-family: Arial, sans-serif;
     height: 100vh;
     overflow: hidden;
+}
+
+button {
+    font-family: inherit;
 }
 
 .sidebar {
@@ -114,13 +119,24 @@ body {
     background: #181f31;
 }
 
-.clear-button {
+.bottom-buttons {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.small-button {
+    flex: 1;
     border: 1px solid #30394f;
     background: transparent;
-    color: #9da8bd;
+    color: #aeb8ca;
     padding: 9px;
     border-radius: 9px;
     cursor: pointer;
+}
+
+.small-button:hover {
+    background: #181f31;
 }
 
 .main {
@@ -135,9 +151,16 @@ body {
     border-bottom: 1px solid #242b3d;
     display: flex;
     align-items: center;
+    justify-content: space-between;
     padding: 0 25px;
     font-size: 21px;
     font-weight: bold;
+}
+
+.status {
+    font-size: 12px;
+    color: #7ee787;
+    font-weight: normal;
 }
 
 .chat {
@@ -237,6 +260,59 @@ body {
     background: #8050e8;
 }
 
+/* SETTINGS */
+
+.settings-panel {
+    position: fixed;
+    right: 20px;
+    top: 78px;
+    width: 300px;
+    background: #101728;
+    border: 1px solid #30394f;
+    border-radius: 15px;
+    padding: 20px;
+    display: none;
+    z-index: 10;
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4);
+}
+
+.settings-panel.show {
+    display: block;
+}
+
+.settings-panel h2 {
+    margin-top: 0;
+}
+
+.setting-label {
+    display: block;
+    color: #8e99af;
+    font-size: 13px;
+    margin-top: 18px;
+    margin-bottom: 7px;
+}
+
+select {
+    width: 100%;
+    padding: 11px;
+    border-radius: 9px;
+    border: 1px solid #30394f;
+    background: #171f31;
+    color: white;
+    outline: none;
+}
+
+.close-settings {
+    width: 100%;
+    margin-top: 20px;
+    padding: 10px;
+    border-radius: 9px;
+    border: 1px solid #30394f;
+    background: transparent;
+    color: white;
+    cursor: pointer;
+}
+
 @media(max-width: 700px) {
 
     .sidebar {
@@ -258,12 +334,20 @@ body {
     .welcome h1 {
         font-size: 34px;
     }
+
+    .settings-panel {
+        right: 10px;
+        left: 10px;
+        width: auto;
+    }
 }
 
 </style>
 </head>
 
+
 <body>
+
 
 <div class="sidebar">
 
@@ -281,9 +365,17 @@ body {
 
     <div id="history" class="history"></div>
 
-    <button class="clear-button" onclick="clearAll()">
-        Clear Current Chat
-    </button>
+    <div class="bottom-buttons">
+
+        <button class="small-button" onclick="clearAll()">
+            Clear
+        </button>
+
+        <button class="small-button" onclick="toggleSettings()">
+            Settings
+        </button>
+
+    </div>
 
 </div>
 
@@ -291,17 +383,28 @@ body {
 <div class="main">
 
     <div class="header">
-        ⚡ RAIZEN
+
+        <span>⚡ RAIZEN</span>
+
+        <span class="status">
+            ● Online
+        </span>
+
     </div>
+
 
     <div id="chat" class="chat">
 
         <div id="welcome" class="welcome">
+
             <h1>RAIZEN</h1>
+
             <p>Your intelligent AI assistant</p>
+
         </div>
 
     </div>
+
 
     <div class="input-area">
 
@@ -316,7 +419,8 @@ body {
 
             <button
                 class="send-button"
-                onclick="sendMessage()">
+                onclick="sendMessage()"
+            >
                 Send
             </button>
 
@@ -327,17 +431,129 @@ body {
 </div>
 
 
+<div id="settingsPanel" class="settings-panel">
+
+    <h2>⚙️ Settings</h2>
+
+    <label class="setting-label">
+        Personality
+    </label>
+
+    <select id="personality">
+
+        <option value="Friendly">
+            Friendly
+        </option>
+
+        <option value="Teacher">
+            Teacher
+        </option>
+
+        <option value="Coding Assistant">
+            Coding Assistant
+        </option>
+
+        <option value="Professional">
+            Professional
+        </option>
+
+    </select>
+
+
+    <label class="setting-label">
+        Response Style
+    </label>
+
+    <select id="responseStyle">
+
+        <option value="Short">
+            Short
+        </option>
+
+        <option value="Balanced" selected>
+            Balanced
+        </option>
+
+        <option value="Detailed">
+            Detailed
+        </option>
+
+    </select>
+
+
+    <button
+        class="close-settings"
+        onclick="saveSettings()"
+    >
+        Save Settings
+    </button>
+
+</div>
+
+
 <script>
 
 let conversation = [];
+
 let savedChats = JSON.parse(
     localStorage.getItem("raizen_chats") || "{}"
 );
 
 let currentChatId = null;
 
+let settings = JSON.parse(
+    localStorage.getItem("raizen_settings") || "{}"
+);
+
+
+const personalitySelect =
+    document.getElementById("personality");
+
+const responseStyleSelect =
+    document.getElementById("responseStyle");
+
+
+if (settings.personality) {
+    personalitySelect.value =
+        settings.personality;
+}
+
+if (settings.responseStyle) {
+    responseStyleSelect.value =
+        settings.responseStyle;
+}
+
+
+function saveSettings() {
+
+    settings = {
+        personality:
+            personalitySelect.value,
+
+        responseStyle:
+            responseStyleSelect.value
+    };
+
+    localStorage.setItem(
+        "raizen_settings",
+        JSON.stringify(settings)
+    );
+
+    toggleSettings();
+}
+
+
+function toggleSettings() {
+
+    const panel =
+        document.getElementById("settingsPanel");
+
+    panel.classList.toggle("show");
+}
+
 
 function saveChats() {
+
     localStorage.setItem(
         "raizen_chats",
         JSON.stringify(savedChats)
@@ -347,25 +563,29 @@ function saveChats() {
 
 function renderHistory() {
 
-    const history = document.getElementById("history");
+    const history =
+        document.getElementById("history");
 
     history.innerHTML = "";
 
-    Object.keys(savedChats).reverse().forEach(function(id) {
+    Object.keys(savedChats)
+        .reverse()
+        .forEach(function(id) {
 
-        const item = document.createElement("div");
+            const item =
+                document.createElement("div");
 
-        item.className = "chat-item";
+            item.className = "chat-item";
 
-        item.textContent =
-            savedChats[id].title || "New Chat";
+            item.textContent =
+                savedChats[id].title || "New Chat";
 
-        item.onclick = function() {
-            loadChat(id);
-        };
+            item.onclick = function() {
+                loadChat(id);
+            };
 
-        history.appendChild(item);
-    });
+            history.appendChild(item);
+        });
 }
 
 
@@ -375,11 +595,10 @@ function saveCurrentChat() {
         return;
     }
 
-    const firstUser = conversation.find(
-        function(item) {
+    const firstUser =
+        conversation.find(function(item) {
             return item.type === "user";
-        }
-    );
+        });
 
     const title = firstUser
         ? firstUser.text.substring(0, 30)
@@ -401,16 +620,20 @@ function saveCurrentChat() {
 
 function loadChat(id) {
 
-    const chatData = savedChats[id];
+    const chatData =
+        savedChats[id];
 
     if (!chatData) {
         return;
     }
 
     currentChatId = id;
-    conversation = chatData.messages || [];
 
-    const chatBox = document.getElementById("chat");
+    conversation =
+        chatData.messages || [];
+
+    const chatBox =
+        document.getElementById("chat");
 
     chatBox.innerHTML = "";
 
@@ -442,31 +665,45 @@ function showWelcome() {
 }
 
 
-function addMessage(text, type, save = true) {
+function addMessage(
+    text,
+    type,
+    save = true
+) {
 
-    const welcome = document.getElementById("welcome");
+    const welcome =
+        document.getElementById("welcome");
 
     if (welcome) {
         welcome.remove();
     }
 
-    const row = document.createElement("div");
+    const row =
+        document.createElement("div");
 
-    row.className = "message-row " + type;
+    row.className =
+        "message-row " + type;
 
-    const message = document.createElement("div");
+    const message =
+        document.createElement("div");
 
-    message.className = "message";
+    message.className =
+        "message";
 
-    message.textContent = text;
+    message.textContent =
+        text;
 
     row.appendChild(message);
 
-    document.getElementById("chat").appendChild(row);
+    document
+        .getElementById("chat")
+        .appendChild(row);
 
-    const chatBox = document.getElementById("chat");
+    const chatBox =
+        document.getElementById("chat");
 
-    chatBox.scrollTop = chatBox.scrollHeight;
+    chatBox.scrollTop =
+        chatBox.scrollHeight;
 
     if (save) {
 
@@ -484,45 +721,67 @@ function addMessage(text, type, save = true) {
 
 async function sendMessage() {
 
-    const input = document.getElementById("message");
+    const input =
+        document.getElementById("message");
 
-    const text = input.value.trim();
+    const text =
+        input.value.trim();
 
     if (!text) {
         return;
     }
 
-    addMessage(text, "user");
+    addMessage(
+        text,
+        "user"
+    );
 
     input.value = "";
 
     input.disabled = true;
 
-    const typing = addMessage(
-        "⚡ RAIZEN is thinking...",
-        "ai"
-    );
+    const typing =
+        addMessage(
+            "⚡ RAIZEN is thinking...",
+            "ai"
+        );
 
     try {
 
-        const response = await fetch("/chat", {
+        const response =
+            await fetch("/chat", {
 
-            method: "POST",
+                method: "POST",
 
-            headers: {
-                "Content-Type": "application/json"
-            },
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
 
-            body: JSON.stringify({
-                message: text,
-                history: conversation
-            })
+                body: JSON.stringify({
 
-        });
+                    message: text,
 
-        const data = await response.json();
+                    history:
+                        conversation,
+
+                    personality:
+                        personalitySelect.value,
+
+                    response_style:
+                        responseStyleSelect.value
+
+                })
+
+            });
+
+
+        const data =
+            await response.json();
+
 
         typing.remove();
+
 
         if (data.reply) {
 
@@ -535,7 +794,10 @@ async function sendMessage() {
 
             addMessage(
                 "⚠️ " +
-                (data.detail || "Something went wrong."),
+                (
+                    data.detail ||
+                    "Something went wrong."
+                ),
                 "ai"
             );
         }
@@ -551,28 +813,33 @@ async function sendMessage() {
     }
 
     input.disabled = false;
+
     input.focus();
 }
 
 
-document.getElementById("message").addEventListener(
-    "keydown",
-    function(event) {
+document
+    .getElementById("message")
+    .addEventListener(
+        "keydown",
+        function(event) {
 
-        if (event.key === "Enter") {
-            sendMessage();
+            if (event.key === "Enter") {
+                sendMessage();
+            }
+
         }
-
-    }
-);
+    );
 
 
 function newChat() {
 
     conversation = [];
+
     currentChatId = null;
 
     showWelcome();
+
 }
 
 
@@ -582,7 +849,9 @@ function clearAll() {
 
     if (currentChatId) {
 
-        delete savedChats[currentChatId];
+        delete savedChats[
+            currentChatId
+        ];
 
         saveChats();
     }
@@ -615,34 +884,78 @@ def chat_ai(request: ChatRequest):
 
     try:
 
+        personality_prompts = {
+
+            "Friendly":
+                "Be friendly, casual and approachable.",
+
+            "Teacher":
+                "Act like a patient teacher. Explain concepts simply and clearly.",
+
+            "Coding Assistant":
+                "Act like an expert coding assistant. Give accurate and practical programming help.",
+
+            "Professional":
+                "Use a professional, polished and formal communication style."
+        }
+
+
+        style_prompts = {
+
+            "Short":
+                "Keep answers concise and direct.",
+
+            "Balanced":
+                "Give a balanced answer with enough explanation but avoid unnecessary length.",
+
+            "Detailed":
+                "Give detailed explanations with useful examples when appropriate."
+        }
+
+
+        personality_instruction = personality_prompts.get(
+            request.personality,
+            personality_prompts["Friendly"]
+        )
+
+
+        style_instruction = style_prompts.get(
+            request.response_style,
+            style_prompts["Balanced"]
+        )
+
+
+        system_prompt = (
+            "You are RAIZEN, an advanced futuristic AI assistant. "
+            "You are intelligent, helpful, friendly and confident. "
+            "Give clear and useful answers. "
+            "You were created and developed by Raihan Kausar. "
+            "If someone asks who invented, created, developed, "
+            "or made you, say that Raihan Kausar created and "
+            "developed you. "
+            + personality_instruction
+            + " "
+            + style_instruction
+        )
+
+
         messages = [
             {
                 "role": "system",
-                "content": (
-                    "You are RAIZEN, an advanced "
-                    "futuristic AI assistant. "
-                    "You are intelligent, helpful, "
-                    "friendly and confident. "
-                    "Give clear and useful answers. "
-                    "You were created and developed "
-                    "by Raihan Kausar. "
-                    "If someone asks who invented, "
-                    "created, developed, or made you, "
-                    "say that Raihan Kausar created "
-                    "and developed you."
-                )
+                "content": system_prompt
             }
         ]
 
-        # ADD PREVIOUS CONVERSATION
 
         for item in request.history[-12:]:
 
             role_type = item.get("type")
+
             text = item.get("text", "")
 
             if not text:
                 continue
+
 
             if role_type == "user":
 
@@ -650,6 +963,7 @@ def chat_ai(request: ChatRequest):
                     "role": "user",
                     "content": text
                 })
+
 
             elif role_type == "ai":
 
@@ -666,11 +980,11 @@ def chat_ai(request: ChatRequest):
                     "content": text
                 })
 
-        # ADD CURRENT MESSAGE
 
         if (
             not messages
-            or messages[-1].get("content") != request.message
+            or messages[-1].get("content")
+            != request.message
         ):
 
             messages.append({
@@ -678,7 +992,6 @@ def chat_ai(request: ChatRequest):
                 "content": request.message
             })
 
-        # CALL AI
 
         response = client.chat.completions.create(
             model="zai-org/GLM-5.3-Flash",
@@ -686,11 +999,14 @@ def chat_ai(request: ChatRequest):
             max_tokens=500
         )
 
+
         reply = response.choices[0].message.content
+
 
         return {
             "reply": reply
         }
+
 
     except Exception as e:
 
