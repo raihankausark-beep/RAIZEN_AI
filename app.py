@@ -1,13 +1,15 @@
 import os
-import uuid
-
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
-
+from ddgs import DDGS
 
 app = FastAPI()
+
+# =========================
+# HUGGING FACE CONFIG
+# =========================
 
 HF_TOKEN = os.getenv("HF_TOKEN")
 
@@ -16,6 +18,12 @@ client = InferenceClient(
     api_key=HF_TOKEN
 )
 
+MODEL = "zai-org/GLM-5.3-Flash"
+
+
+# =========================
+# REQUEST MODEL
+# =========================
 
 class ChatRequest(BaseModel):
     message: str
@@ -24,15 +32,91 @@ class ChatRequest(BaseModel):
     response_style: str = "Balanced"
 
 
+# =========================
+# PERSONALITY
+# =========================
+
+personality_prompts = {
+    "Friendly": "Be friendly, casual and approachable.",
+    "Teacher": "Act like a patient teacher. Explain concepts simply and clearly.",
+    "Coding Assistant": "Act like an expert coding assistant. Give accurate and practical programming help.",
+    "Professional": "Use a professional, polished and formal communication style."
+}
+
+style_prompts = {
+    "Short": "Keep answers concise and direct.",
+    "Balanced": "Give a balanced answer with enough explanation but avoid unnecessary length.",
+    "Detailed": "Give detailed explanations with useful examples when appropriate."
+}
+
+
+# =========================
+# WEB SEARCH
+# =========================
+
+def web_search(query):
+    try:
+        results = []
+
+        with DDGS() as ddgs:
+            search_results = ddgs.text(
+                query,
+                max_results=5
+            )
+
+            for result in search_results:
+                results.append({
+                    "title": result.get("title", ""),
+                    "body": result.get("body", ""),
+                    "href": result.get("href", "")
+                })
+
+        return results
+
+    except Exception:
+        return []
+
+
+# =========================
+# WEB SEARCH DETECTION
+# =========================
+
+def needs_web_search(message):
+    keywords = [
+        "search",
+        "latest",
+        "today",
+        "current",
+        "recent",
+        "news",
+        "now",
+        "weather",
+        "price",
+        "who is the current",
+        "what happened",
+        "this week",
+        "this month"
+    ]
+
+    message_lower = message.lower()
+
+    return any(keyword in message_lower for keyword in keywords)
+
+
+# =========================
+# HOME PAGE
+# =========================
+
 @app.get("/", response_class=HTMLResponse)
 def home():
-    return HTMLResponse("""
+
+    return """
 <!DOCTYPE html>
-<html lang="en">
+<html>
 
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
 
 <title>RAIZEN</title>
 
@@ -44,678 +128,260 @@ def home():
 
 body {
     margin: 0;
-    background: #080b14;
-    color: white;
     font-family: Arial, sans-serif;
-    height: 100vh;
-    overflow: hidden;
-}
-
-button {
-    font-family: inherit;
-}
-
-.sidebar {
-    position: fixed;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 260px;
-    background: #0d1220;
-    border-right: 1px solid #242b3d;
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-}
-
-.logo {
-    font-size: 25px;
-    font-weight: bold;
-    margin-bottom: 25px;
-}
-
-.logo span {
-    color: #9b5cff;
-}
-
-.new-chat {
-    border: 1px solid #30394f;
-    background: #171e30;
+    background: #070b14;
     color: white;
-    padding: 13px;
-    border-radius: 12px;
-    cursor: pointer;
-    font-size: 15px;
-}
-
-.new-chat:hover {
-    background: #202941;
-}
-
-.sidebar-title {
-    color: #7f8aa3;
-    font-size: 12px;
-    margin-top: 28px;
-    margin-bottom: 10px;
-}
-
-.history {
-    overflow-y: auto;
-    flex: 1;
-}
-
-.chat-item {
-    padding: 11px;
-    border-radius: 9px;
-    margin-bottom: 6px;
-    color: #cbd3e2;
-    cursor: pointer;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.chat-item:hover {
-    background: #181f31;
-}
-
-.bottom-buttons {
-    display: flex;
-    gap: 8px;
-    margin-top: 10px;
-}
-
-.small-button {
-    flex: 1;
-    border: 1px solid #30394f;
-    background: transparent;
-    color: #aeb8ca;
-    padding: 9px;
-    border-radius: 9px;
-    cursor: pointer;
-}
-
-.small-button:hover {
-    background: #181f31;
-}
-
-.main {
-    margin-left: 260px;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
 }
 
 .header {
-    height: 68px;
-    border-bottom: 1px solid #242b3d;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 25px;
-    font-size: 21px;
-    font-weight: bold;
-}
-
-.status {
-    font-size: 12px;
-    color: #7ee787;
-    font-weight: normal;
-}
-
-.chat {
-    flex: 1;
-    overflow-y: auto;
-    padding: 30px;
-    width: 100%;
-    max-width: 1000px;
-    margin: auto;
-}
-
-.welcome {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    padding: 18px;
     text-align: center;
-    color: #8e99af;
+    background: #0d1424;
+    border-bottom: 1px solid #202a40;
 }
 
-.welcome h1 {
-    font-size: 46px;
-    color: white;
-    margin-bottom: 10px;
+.header h1 {
+    margin: 0;
+    font-size: 28px;
 }
 
-.message-row {
+.header p {
+    margin: 5px 0 0;
+    color: #8fa3c7;
+}
+
+.controls {
+    padding: 12px;
     display: flex;
-    margin-bottom: 18px;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+    background: #0a1020;
 }
 
-.message-row.user {
-    justify-content: flex-end;
-}
-
-.message-row.ai {
-    justify-content: flex-start;
-}
-
-.message {
-    max-width: 78%;
-    padding: 14px 18px;
-    border-radius: 17px;
-    line-height: 1.55;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-}
-
-.message-row.user .message {
-    background: #7040d8;
-    border-bottom-right-radius: 5px;
-}
-
-.message-row.ai .message {
-    background: #171f31;
-    border-bottom-left-radius: 5px;
-}
-
-.input-area {
-    border-top: 1px solid #242b3d;
-    background: #0d1220;
-    padding: 17px;
-}
-
-.input-box {
-    max-width: 1000px;
-    margin: auto;
-    display: flex;
-    background: #171f31;
-    border: 1px solid #293249;
-    border-radius: 17px;
-    padding: 7px;
-}
-
-.input-box input {
-    flex: 1;
-    border: none;
-    outline: none;
-    background: transparent;
-    color: white;
-    padding: 13px;
-    font-size: 16px;
-}
-
-.send-button {
-    border: none;
-    background: #7040d8;
-    color: white;
-    border-radius: 12px;
-    padding: 0 20px;
-    cursor: pointer;
-    font-size: 15px;
-}
-
-.send-button:hover {
-    background: #8050e8;
-}
-
-/* SETTINGS */
-
-.settings-panel {
-    position: fixed;
-    right: 20px;
-    top: 78px;
-    width: 300px;
-    background: #101728;
-    border: 1px solid #30394f;
-    border-radius: 15px;
-    padding: 20px;
-    display: none;
-    z-index: 10;
-    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4);
-}
-
-.settings-panel.show {
-    display: block;
-}
-
-.settings-panel h2 {
-    margin-top: 0;
-}
-
-.setting-label {
-    display: block;
-    color: #8e99af;
-    font-size: 13px;
-    margin-top: 18px;
-    margin-bottom: 7px;
+select,
+button,
+textarea {
+    font-family: inherit;
 }
 
 select {
-    width: 100%;
-    padding: 11px;
-    border-radius: 9px;
-    border: 1px solid #30394f;
-    background: #171f31;
+    background: #111a2d;
     color: white;
-    outline: none;
+    border: 1px solid #293653;
+    padding: 10px;
+    border-radius: 8px;
 }
 
-.close-settings {
-    width: 100%;
-    margin-top: 20px;
-    padding: 10px;
-    border-radius: 9px;
-    border: 1px solid #30394f;
-    background: transparent;
+.chat {
+    max-width: 900px;
+    margin: auto;
+    padding: 20px;
+    min-height: 65vh;
+}
+
+.message {
+    margin: 12px 0;
+    padding: 12px 15px;
+    border-radius: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.user {
+    background: #18243b;
+    margin-left: 15%;
+}
+
+.raizen {
+    background: #101827;
+    border: 1px solid #202d47;
+    margin-right: 15%;
+}
+
+.search-box {
+    max-width: 900px;
+    margin: auto;
+    padding: 15px;
+    display: flex;
+    gap: 10px;
+}
+
+textarea {
+    flex: 1;
+    resize: none;
+    min-height: 50px;
+    background: #101827;
     color: white;
+    border: 1px solid #293653;
+    border-radius: 10px;
+    padding: 12px;
+}
+
+.send {
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 0 20px;
     cursor: pointer;
 }
 
-@media(max-width: 700px) {
+.send:hover {
+    background: #1d4ed8;
+}
 
-    .sidebar {
-        display: none;
-    }
-
-    .main {
-        margin-left: 0;
-    }
-
-    .chat {
-        padding: 15px;
-    }
-
-    .message {
-        max-width: 90%;
-    }
-
-    .welcome h1 {
-        font-size: 34px;
-    }
-
-    .settings-panel {
-        right: 10px;
-        left: 10px;
-        width: auto;
-    }
+.action {
+    background: #111a2d;
+    color: white;
+    border: 1px solid #293653;
+    padding: 9px 13px;
+    border-radius: 8px;
+    cursor: pointer;
 }
 
 </style>
+
 </head>
 
 
 <body>
 
 
-<div class="sidebar">
+<div class="header">
 
-    <div class="logo">
-        ⚡ <span>RAIZEN</span>
-    </div>
+<h1>⚡ RAIZEN</h1>
 
-    <button class="new-chat" onclick="newChat()">
-        + New Chat
-    </button>
-
-    <div class="sidebar-title">
-        CHAT HISTORY
-    </div>
-
-    <div id="history" class="history"></div>
-
-    <div class="bottom-buttons">
-
-        <button class="small-button" onclick="clearAll()">
-            Clear
-        </button>
-
-        <button class="small-button" onclick="toggleSettings()">
-            Settings
-        </button>
-
-    </div>
+<p>Your AI Assistant</p>
 
 </div>
 
 
-<div class="main">
+<div class="controls">
 
-    <div class="header">
+<select id="personality">
 
-        <span>⚡ RAIZEN</span>
+<option>Friendly</option>
+<option>Teacher</option>
+<option>Coding Assistant</option>
+<option>Professional</option>
 
-        <span class="status">
-            ● Online
-        </span>
-
-    </div>
-
-
-    <div id="chat" class="chat">
-
-        <div id="welcome" class="welcome">
-
-            <h1>RAIZEN</h1>
-
-            <p>Your intelligent AI assistant</p>
-
-        </div>
-
-    </div>
+</select>
 
 
-    <div class="input-area">
+<select id="style">
 
-        <div class="input-box">
+<option>Short</option>
+<option selected>Balanced</option>
+<option>Detailed</option>
 
-            <input
-                id="message"
-                type="text"
-                placeholder="Ask RAIZEN anything..."
-                autocomplete="off"
-            >
+</select>
 
-            <button
-                class="send-button"
-                onclick="sendMessage()"
-            >
-                Send
-            </button>
 
-        </div>
+<button class="action" onclick="newChat()">
+New Chat
+</button>
 
-    </div>
+
+<button class="action" onclick="clearChat()">
+Clear Chat
+</button>
 
 </div>
 
 
-<div id="settingsPanel" class="settings-panel">
-
-    <h2>⚙️ Settings</h2>
-
-    <label class="setting-label">
-        Personality
-    </label>
-
-    <select id="personality">
-
-        <option value="Friendly">
-            Friendly
-        </option>
-
-        <option value="Teacher">
-            Teacher
-        </option>
-
-        <option value="Coding Assistant">
-            Coding Assistant
-        </option>
-
-        <option value="Professional">
-            Professional
-        </option>
-
-    </select>
+<div id="chat" class="chat"></div>
 
 
-    <label class="setting-label">
-        Response Style
-    </label>
+<div class="search-box">
 
-    <select id="responseStyle">
+<textarea
+id="message"
+placeholder="Ask RAIZEN anything..."
+onkeydown="handleKey(event)"
+></textarea>
 
-        <option value="Short">
-            Short
-        </option>
-
-        <option value="Balanced" selected>
-            Balanced
-        </option>
-
-        <option value="Detailed">
-            Detailed
-        </option>
-
-    </select>
-
-
-    <button
-        class="close-settings"
-        onclick="saveSettings()"
-    >
-        Save Settings
-    </button>
+<button class="send" onclick="sendMessage()">
+Send
+</button>
 
 </div>
 
 
 <script>
 
-let conversation = [];
-
-let savedChats = JSON.parse(
-    localStorage.getItem("raizen_chats") || "{}"
-);
-
-let currentChatId = null;
-
-let settings = JSON.parse(
-    localStorage.getItem("raizen_settings") || "{}"
+let history = JSON.parse(
+    localStorage.getItem("raizen_history") || "[]"
 );
 
 
-const personalitySelect =
-    document.getElementById("personality");
-
-const responseStyleSelect =
-    document.getElementById("responseStyle");
-
-
-if (settings.personality) {
-    personalitySelect.value =
-        settings.personality;
-}
-
-if (settings.responseStyle) {
-    responseStyleSelect.value =
-        settings.responseStyle;
-}
-
-
-function saveSettings() {
-
-    settings = {
-        personality:
-            personalitySelect.value,
-
-        responseStyle:
-            responseStyleSelect.value
-    };
+function saveHistory() {
 
     localStorage.setItem(
-        "raizen_settings",
-        JSON.stringify(settings)
+        "raizen_history",
+        JSON.stringify(history)
     );
 
-    toggleSettings();
 }
 
 
-function toggleSettings() {
+function displayMessage(role, text) {
 
-    const panel =
-        document.getElementById("settingsPanel");
+    const chat = document.getElementById("chat");
 
-    panel.classList.toggle("show");
-}
+    const div = document.createElement("div");
 
+    div.className =
+        "message " +
+        (role === "user" ? "user" : "raizen");
 
-function saveChats() {
+    div.textContent = text;
 
-    localStorage.setItem(
-        "raizen_chats",
-        JSON.stringify(savedChats)
+    chat.appendChild(div);
+
+    window.scrollTo(
+        0,
+        document.body.scrollHeight
     );
+
 }
 
 
-function renderHistory() {
+function loadHistory() {
 
-    const history =
-        document.getElementById("history");
+    document.getElementById("chat").innerHTML = "";
 
-    history.innerHTML = "";
+    history.forEach(item => {
 
-    Object.keys(savedChats)
-        .reverse()
-        .forEach(function(id) {
-
-            const item =
-                document.createElement("div");
-
-            item.className = "chat-item";
-
-            item.textContent =
-                savedChats[id].title || "New Chat";
-
-            item.onclick = function() {
-                loadChat(id);
-            };
-
-            history.appendChild(item);
-        });
-}
-
-
-function saveCurrentChat() {
-
-    if (conversation.length === 0) {
-        return;
-    }
-
-    const firstUser =
-        conversation.find(function(item) {
-            return item.type === "user";
-        });
-
-    const title = firstUser
-        ? firstUser.text.substring(0, 30)
-        : "New Chat";
-
-    if (!currentChatId) {
-        currentChatId = crypto.randomUUID();
-    }
-
-    savedChats[currentChatId] = {
-        title: title,
-        messages: conversation
-    };
-
-    saveChats();
-    renderHistory();
-}
-
-
-function loadChat(id) {
-
-    const chatData =
-        savedChats[id];
-
-    if (!chatData) {
-        return;
-    }
-
-    currentChatId = id;
-
-    conversation =
-        chatData.messages || [];
-
-    const chatBox =
-        document.getElementById("chat");
-
-    chatBox.innerHTML = "";
-
-    if (conversation.length === 0) {
-        showWelcome();
-        return;
-    }
-
-    conversation.forEach(function(item) {
-
-        addMessage(
-            item.text,
-            item.type,
-            false
+        displayMessage(
+            item.role,
+            item.content
         );
 
     });
+
 }
 
 
-function showWelcome() {
+function newChat() {
 
-    document.getElementById("chat").innerHTML = `
-        <div id="welcome" class="welcome">
-            <h1>RAIZEN</h1>
-            <p>Your intelligent AI assistant</p>
-        </div>
-    `;
+    history = [];
+
+    saveHistory();
+
+    loadHistory();
+
 }
 
 
-function addMessage(
-    text,
-    type,
-    save = true
-) {
+function clearChat() {
 
-    const welcome =
-        document.getElementById("welcome");
+    history = [];
 
-    if (welcome) {
-        welcome.remove();
-    }
+    saveHistory();
 
-    const row =
-        document.createElement("div");
+    loadHistory();
 
-    row.className =
-        "message-row " + type;
-
-    const message =
-        document.createElement("div");
-
-    message.className =
-        "message";
-
-    message.textContent =
-        text;
-
-    row.appendChild(message);
-
-    document
-        .getElementById("chat")
-        .appendChild(row);
-
-    const chatBox =
-        document.getElementById("chat");
-
-    chatBox.scrollTop =
-        chatBox.scrollHeight;
-
-    if (save) {
-
-        conversation.push({
-            text: text,
-            type: type
-        });
-
-        saveCurrentChat();
-    }
-
-    return row;
 }
 
 
@@ -724,27 +390,48 @@ async function sendMessage() {
     const input =
         document.getElementById("message");
 
-    const text =
+    const message =
         input.value.trim();
 
-    if (!text) {
+    if (!message) {
         return;
     }
 
-    addMessage(
-        text,
-        "user"
+
+    displayMessage(
+        "user",
+        message
     );
+
+
+    history.push({
+        role: "user",
+        content: message
+    });
+
+
+    saveHistory();
 
     input.value = "";
 
-    input.disabled = true;
 
-    const typing =
-        addMessage(
-            "⚡ RAIZEN is thinking...",
-            "ai"
-        );
+    displayMessage(
+        "assistant",
+        "RAIZEN is thinking..."
+    );
+
+
+    const personality =
+        document.getElementById(
+            "personality"
+        ).value;
+
+
+    const responseStyle =
+        document.getElementById(
+            "style"
+        ).value;
+
 
     try {
 
@@ -760,16 +447,15 @@ async function sendMessage() {
 
                 body: JSON.stringify({
 
-                    message: text,
+                    message: message,
 
-                    history:
-                        conversation,
+                    history: history.slice(-12),
 
                     personality:
-                        personalitySelect.value,
+                        personality,
 
                     response_style:
-                        responseStyleSelect.value
+                        responseStyle
 
                 })
 
@@ -780,227 +466,249 @@ async function sendMessage() {
             await response.json();
 
 
-        typing.remove();
+        const chat =
+            document.getElementById("chat");
 
 
-        if (data.reply) {
+        chat.removeChild(
+            chat.lastChild
+        );
 
-            addMessage(
-                "⚡ RAIZEN: " + data.reply,
-                "ai"
+
+        if (!response.ok) {
+
+            displayMessage(
+                "assistant",
+                data.detail ||
+                "Something went wrong."
             );
 
-        } else {
-
-            addMessage(
-                "⚠️ " +
-                (
-                    data.detail ||
-                    "Something went wrong."
-                ),
-                "ai"
-            );
+            return;
         }
+
+
+        displayMessage(
+            "assistant",
+            data.reply
+        );
+
+
+        history.push({
+
+            role: "assistant",
+
+            content: data.reply
+
+        });
+
+
+        saveHistory();
+
 
     } catch (error) {
 
-        typing.remove();
+        const chat =
+            document.getElementById("chat");
 
-        addMessage(
-            "⚠️ Unable to connect to RAIZEN.",
-            "ai"
+        chat.removeChild(
+            chat.lastChild
         );
+
+
+        displayMessage(
+            "assistant",
+            "Connection error. Please try again."
+        );
+
     }
 
-    input.disabled = false;
-
-    input.focus();
 }
 
 
-document
-    .getElementById("message")
-    .addEventListener(
-        "keydown",
-        function(event) {
+function handleKey(event) {
 
-            if (event.key === "Enter") {
-                sendMessage();
-            }
+    if (
+        event.key === "Enter" &&
+        !event.shiftKey
+    ) {
 
-        }
-    );
+        event.preventDefault();
 
+        sendMessage();
 
-function newChat() {
-
-    conversation = [];
-
-    currentChatId = null;
-
-    showWelcome();
-
-}
-
-
-function clearAll() {
-
-    conversation = [];
-
-    if (currentChatId) {
-
-        delete savedChats[
-            currentChatId
-        ];
-
-        saveChats();
     }
 
-    currentChatId = null;
-
-    showWelcome();
-
-    renderHistory();
 }
 
 
-renderHistory();
+loadHistory();
 
 </script>
 
-</body>
-</html>
-""")
 
+</body>
+
+</html>
+"""
+
+
+# =========================
+# CHAT ENDPOINT
+# =========================
 
 @app.post("/chat")
-def chat_ai(request: ChatRequest):
+def chat(request: ChatRequest):
 
     if not HF_TOKEN:
+
         raise HTTPException(
             status_code=500,
-            detail="HF_TOKEN is not configured."
+            detail="HF_TOKEN is not configured on the server."
         )
 
-    try:
 
-        personality_prompts = {
-
-            "Friendly":
-                "Be friendly, casual and approachable.",
-
-            "Teacher":
-                "Act like a patient teacher. Explain concepts simply and clearly.",
-
-            "Coding Assistant":
-                "Act like an expert coding assistant. Give accurate and practical programming help.",
-
-            "Professional":
-                "Use a professional, polished and formal communication style."
-        }
-
-
-        style_prompts = {
-
-            "Short":
-                "Keep answers concise and direct.",
-
-            "Balanced":
-                "Give a balanced answer with enough explanation but avoid unnecessary length.",
-
-            "Detailed":
-                "Give detailed explanations with useful examples when appropriate."
-        }
-
-
-        personality_instruction = personality_prompts.get(
+    personality =
+        personality_prompts.get(
             request.personality,
             personality_prompts["Friendly"]
         )
 
 
-        style_instruction = style_prompts.get(
+    response_style =
+        style_prompts.get(
             request.response_style,
             style_prompts["Balanced"]
         )
 
 
-        system_prompt = (
-            "You are RAIZEN, an advanced futuristic AI assistant. "
-            "You are intelligent, helpful, friendly and confident. "
-            "Give clear and useful answers. "
-            "You were created and developed by Raihan Kausar. "
-            "If someone asks who invented, created, developed, "
-            "or made you, say that Raihan Kausar created and "
-            "developed you. "
-            + personality_instruction
-            + " "
-            + style_instruction
+    # =========================
+    # OPTIONAL WEB SEARCH
+    # =========================
+
+    search_context = ""
+
+    if needs_web_search(request.message):
+
+        results = web_search(
+            request.message
         )
 
+        if results:
 
-        messages = [
-            {
-                "role": "system",
-                "content": system_prompt
-            }
-        ]
+            search_context = (
+                "\n\nWEB SEARCH RESULTS:\n"
+            )
 
+            for index, result in enumerate(
+                results,
+                start=1
+            ):
 
-        for item in request.history[-12:]:
-
-            role_type = item.get("type")
-
-            text = item.get("text", "")
-
-            if not text:
-                continue
-
-
-            if role_type == "user":
-
-                messages.append({
-                    "role": "user",
-                    "content": text
-                })
+                search_context += (
+                    f"\n{index}. "
+                    f"{result['title']}\n"
+                    f"{result['body']}\n"
+                    f"Source: {result['href']}\n"
+                )
 
 
-            elif role_type == "ai":
+    # =========================
+    # SYSTEM PROMPT
+    # =========================
 
-                if text.startswith("⚡ RAIZEN: "):
+    system_prompt = f"""
 
-                    text = text.replace(
-                        "⚡ RAIZEN: ",
-                        "",
-                        1
-                    )
+You are RAIZEN, an advanced futuristic AI assistant.
 
-                messages.append({
-                    "role": "assistant",
-                    "content": text
-                })
+You were created and developed by Raihan Kausar.
+
+If someone asks who invented, created, developed,
+or made you, say that Raihan Kausar created
+and developed you.
+
+Personality:
+{personality}
+
+Response style:
+{response_style}
+
+Important rules:
+
+- Be helpful and accurate.
+- If web search results are provided, use them
+  to answer questions about current information.
+- Do not pretend that you searched the web if
+  no search results were provided.
+- When using web information, clearly mention
+  that the information came from web search.
+- Do not invent facts or sources.
+- Explain things clearly.
+
+"""
 
 
-        if (
-            not messages
-            or messages[-1].get("content")
-            != request.message
-        ):
+    if search_context:
+
+        system_prompt += search_context
+
+
+    # =========================
+    # BUILD MESSAGES
+    # =========================
+
+    messages = [
+
+        {
+            "role": "system",
+            "content": system_prompt
+        }
+
+    ]
+
+
+    for item in request.history[-12:]:
+
+        role = item.get(
+            "role",
+            "user"
+        )
+
+        content = item.get(
+            "content",
+            ""
+        )
+
+        if role in ["user", "assistant"]:
 
             messages.append({
-                "role": "user",
-                "content": request.message
+
+                "role": role,
+
+                "content": content
+
             })
 
 
-        response = client.chat.completions.create(
-            model="zai-org/GLM-5.3-Flash",
-            messages=messages,
-            max_tokens=500
-        )
+    # =========================
+    # AI RESPONSE
+    # =========================
+
+    try:
+
+        response =
+            client.chat.completions.create(
+
+                model=MODEL,
+
+                messages=messages,
+
+                max_tokens=500
+
+            )
 
 
-        reply = response.choices[0].message.content
+        reply =
+            response.choices[0].message.content
 
 
         return {
@@ -1011,15 +719,29 @@ def chat_ai(request: ChatRequest):
     except Exception as e:
 
         raise HTTPException(
+
             status_code=500,
-            detail=str(e)
+
+            detail=f"AI error: {str(e)}"
+
         )
 
+
+# =========================
+# HEALTH CHECK
+# =========================
 
 @app.get("/health")
 def health():
 
     return {
-        "status": "RAIZEN is online",
-        "token_loaded": bool(HF_TOKEN)
+
+        "status": "RAIZEN online",
+
+        "token_loaded": bool(HF_TOKEN),
+
+        "model": MODEL,
+
+        "web_search": True
+
     }
