@@ -6,10 +6,12 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
+from pypdf import PdfReader
+from docx import Document
 
 app = FastAPI()
 
@@ -30,6 +32,16 @@ class ChatRequest(BaseModel):
     custom_instructions: str = ""
 
 
+
+class FileRequest(BaseModel):
+    message: str
+    document_text: str
+    history: list = []
+    personality: str = "Friendly"
+    response_style: str = "Balanced"
+    custom_instructions: str = ""
+
+
 PERSONALITIES = {
     "Friendly": "Be friendly, natural, helpful and easy to understand.",
     "Teacher": "Explain clearly like a good teacher using simple examples.",
@@ -42,6 +54,35 @@ STYLES = {
     "Balanced": "Give balanced answers with useful explanation.",
     "Detailed": "Give detailed explanations and examples when useful."
 }
+
+
+
+def extract_document_text(filename, raw_bytes):
+    from io import BytesIO
+    lower_name = filename.lower()
+
+    if lower_name.endswith(".pdf"):
+        reader = PdfReader(BytesIO(raw_bytes))
+        return "\n\n".join(page.extract_text() or "" for page in reader.pages).strip()
+
+    if lower_name.endswith(".docx"):
+        document = Document(BytesIO(raw_bytes))
+        parts = [p.text for p in document.paragraphs if p.text.strip()]
+        for table in document.tables:
+            for row in table.rows:
+                parts.append(" | ".join(cell.text.strip() for cell in row.cells))
+        return "\n".join(parts).strip()
+
+    if lower_name.endswith(".txt"):
+        return raw_bytes.decode("utf-8", errors="replace").strip()
+
+    raise ValueError("Unsupported file type. Use PDF, DOCX, or TXT.")
+
+
+def limit_document_text(text, max_chars=50000):
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + "\n\n[Document truncated for processing.]"
 
 
 def needs_live_search(message):
@@ -630,6 +671,23 @@ select,
     opacity: 0.6;
 }
 
+.file-panel {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+.file-input {
+    max-width: 100%;
+    color: #cbd5e1;
+    font-size: 13px;
+}
+.file-name {
+    font-size: 12px;
+    opacity: 0.7;
+}
+
 .small {
     text-align: center;
     opacity: 0.5;
@@ -689,6 +747,12 @@ select,
 
 </div>
 
+<div class="file-panel">
+<input id="fileInput" class="file-input" type="file" accept=".pdf,.docx,.txt">
+<span id="fileName" class="file-name">No document selected</span>
+<button class="control" onclick="clearDocument()">Remove document</button>
+</div>
+
 <div class="input-area">
 
 <input
@@ -709,6 +773,54 @@ RAIZEN â¢ Created and developed by Raihan Kausar
 
 <script>
 let chatHistory = [];
+let documentText = "";
+let documentName = "";
+
+document.getElementById("fileInput").addEventListener("change", async function() {
+    const file = this.files[0];
+    if (!file) return;
+
+    const lower = file.name.toLowerCase();
+    if (![".pdf", ".docx", ".txt"].some(ext => lower.endsWith(ext))) {
+        displayMessage("assistant", "â ï¸ Please upload a PDF, DOCX, or TXT file.");
+        this.value = "";
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+    document.getElementById("fileName").textContent = "Reading " + file.name + "...";
+
+    try {
+        const response = await fetch("/upload", { method: "POST", body: formData });
+        const data = await response.json();
+
+        if (!response.ok || data.error) {
+            throw new Error(data.error || "Upload failed.");
+        }
+
+        documentText = data.text || "";
+        documentName = data.filename || file.name;
+        document.getElementById("fileName").textContent = "ð " + documentName + " ready";
+
+        displayMessage("assistant",
+            "ð " + documentName +
+            " is ready. Ask me to summarize it, explain it, find important points, or create questions from it."
+        );
+    } catch (error) {
+        documentText = "";
+        documentName = "";
+        document.getElementById("fileName").textContent = "Upload failed";
+        displayMessage("assistant", "â ï¸ " + error.message);
+    }
+});
+
+function clearDocument() {
+    documentText = "";
+    documentName = "";
+    document.getElementById("fileInput").value = "";
+    document.getElementById("fileName").textContent = "No document selected";
+}
 
 function saveHistory() {
     localStorage.setItem(
@@ -800,7 +912,8 @@ async function sendMessage() {
                 custom_instructions:
                     localStorage.getItem(
                         "raizen_custom_instructions"
-                    ) || ""
+                    ) || "",
+                document_text: documentText
             })
         });
 
@@ -903,6 +1016,32 @@ async def home():
     return HTMLResponse(content=HTML)
 
 
+
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...)):
+    filename = file.filename or "document"
+    if not filename.lower().endswith((".pdf", ".docx", ".txt")):
+        return {"error": "Unsupported file type. Please upload PDF, DOCX, or TXT."}
+
+    try:
+        raw_bytes = await file.read()
+        if len(raw_bytes) > 10 * 1024 * 1024:
+            return {"error": "File is too large. Maximum size is 10 MB."}
+
+        text = extract_document_text(filename, raw_bytes)
+        if not text:
+            return {"error": "I could not extract readable text from this file."}
+
+        return {
+            "filename": filename,
+            "characters": len(text),
+            "text": limit_document_text(text)
+        }
+    except Exception as error:
+        print("FILE ERROR:", error)
+        return {"error": "Could not read this document."}
+
+
 @app.post("/chat")
 async def chat(request: ChatRequest):
     message = request.message.strip()
@@ -954,6 +1093,15 @@ async def chat(request: ChatRequest):
         STYLES["Balanced"]
     )
 
+    document_context = "No document is currently uploaded."
+    if request.document_text.strip():
+        document_context = (
+            "An uploaded document is available. Use its extracted text as the "
+            "main source for questions specifically about that document. "
+            "If the answer is not present, say so clearly.\n\nDOCUMENT TEXT:\n"
+            + limit_document_text(request.document_text)
+        )
+
     system_prompt = f"""
 You are RAIZEN, an advanced AI assistant.
 
@@ -983,9 +1131,16 @@ Rules:
   weather data could not be retrieved.
 - If LIVE_SEARCH_ERROR appears, explain that
   live search could not retrieve data.
+- If an uploaded document is present, answer document questions from it.
+- For summarize, key points, explain, quiz, questions, or important-points
+  requests, use the uploaded document as the main source.
+- Do not claim to have read a document if no document text was supplied.
 
 Live information:
 {live_data}
+
+Uploaded document:
+{document_context}
 """
 
     messages = [
