@@ -1,8 +1,9 @@
 import os
+import json
 import re
-from html import unescape
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+from xml.etree import ElementTree as ET
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -41,83 +42,196 @@ STYLES = {
 }
 
 
-def needs_web_search(message):
-    keywords = [
-        "search",
+def needs_live_search(message):
+    words = [
         "latest",
         "today",
         "current",
         "recent",
         "news",
-        "now",
-        "weather",
-        "price",
-        "who is the current",
-        "what happened",
+        "right now",
         "this week",
-        "this month"
+        "this month",
+        "search",
+        "what happened",
+        "trending"
     ]
 
     text = message.lower()
 
     return any(
-        keyword in text
-        for keyword in keywords
+        word in text
+        for word in words
     )
 
 
-def web_search(query):
-    try:
-        url = (
-            "https://html.duckduckgo.com/html/?q="
-            + quote(query)
+def google_news_search(query):
+    url = (
+        "https://news.google.com/rss/search?q="
+        + quote(query)
+        + "&hl=en-IN&gl=IN&ceid=IN:en"
+    )
+
+    request = Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0"
+        }
+    )
+
+    with urlopen(
+        request,
+        timeout=12
+    ) as response:
+
+        xml_data = response.read()
+
+    root = ET.fromstring(xml_data)
+
+    results = []
+
+    for item in root.findall(".//item")[:6]:
+
+        title = item.findtext(
+            "title",
+            ""
         )
 
-        request = Request(
-            url,
-            headers={
-                "User-Agent": "Mozilla/5.0"
-            }
+        link = item.findtext(
+            "link",
+            ""
         )
 
-        with urlopen(
-            request,
-            timeout=10
-        ) as response:
-
-            page = response.read().decode(
-                "utf-8",
-                errors="ignore"
-            )
-
-        pattern = re.compile(
-            r'<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
-            re.IGNORECASE | re.DOTALL
+        published = item.findtext(
+            "pubDate",
+            ""
         )
 
-        results = []
-
-        for link, title in pattern.findall(page)[:5]:
-
-            clean_title = re.sub(
-                r"<.*?>",
-                "",
-                title
-            )
-
-            clean_title = unescape(
-                clean_title
-            ).strip()
+        if title and link:
 
             results.append({
-                "title": clean_title,
-                "href": link
+                "title": title,
+                "link": link,
+                "published": published
             })
 
-        return results
+    return results
+
+
+def wikipedia_search(query):
+    url = (
+        "https://en.wikipedia.org/w/api.php"
+        "?action=query&list=search&format=json"
+        "&utf8=1&srlimit=5&srsearch="
+        + quote(query)
+    )
+
+    request = Request(
+        url,
+        headers={
+            "User-Agent": "RAIZEN/1.0"
+        }
+    )
+
+    with urlopen(
+        request,
+        timeout=12
+    ) as response:
+
+        data = json.loads(
+            response.read().decode("utf-8")
+        )
+
+    results = []
+
+    for item in data.get(
+        "query",
+        {}
+    ).get(
+        "search",
+        []
+    )[:5]:
+
+        title = item.get(
+            "title",
+            ""
+        )
+
+        snippet = re.sub(
+            r"<.*?>",
+            "",
+            item.get(
+                "snippet",
+                ""
+            )
+        )
+
+        if title:
+
+            results.append({
+                "title": title,
+                "snippet": snippet,
+                "link": (
+                    "https://en.wikipedia.org/wiki/"
+                    + quote(
+                        title.replace(
+                            " ",
+                            "_"
+                        )
+                    )
+                )
+            })
+
+    return results
+
+
+def live_search(query):
+
+    results = []
+
+    try:
+
+        news = google_news_search(
+            query
+        )
+
+        for item in news:
+
+            results.append(
+                "NEWS: "
+                + item["title"]
+                + " | "
+                + item["published"]
+                + " | "
+                + item["link"]
+            )
 
     except Exception:
-        return []
+        pass
+
+    if not results:
+
+        try:
+
+            wiki = wikipedia_search(
+                query
+            )
+
+            for item in wiki:
+
+                results.append(
+                    "REFERENCE: "
+                    + item["title"]
+                    + " | "
+                    + item["snippet"]
+                    + " | "
+                    + item["link"]
+                )
+
+        except Exception:
+            pass
+
+    return results
 
 
 @app.get(
@@ -128,6 +242,7 @@ def home():
 
     return """
 <!DOCTYPE html>
+
 <html>
 
 <head>
@@ -145,14 +260,14 @@ def home():
 
 body {
     margin: 0;
-    font-family: Arial, sans-serif;
     background: #070b14;
     color: white;
+    font-family: Arial, sans-serif;
 }
 
 .header {
-    padding: 20px;
     text-align: center;
+    padding: 20px;
     background: #0d1424;
     border-bottom: 1px solid #202a40;
 }
@@ -182,7 +297,8 @@ textarea {
     font-family: Arial, sans-serif;
 }
 
-select {
+select,
+.action {
     background: #111a2d;
     color: white;
     border: 1px solid #293653;
@@ -190,16 +306,8 @@ select {
     border-radius: 8px;
 }
 
-button {
-    cursor: pointer;
-}
-
 .action {
-    background: #111a2d;
-    color: white;
-    border: 1px solid #293653;
-    padding: 9px 13px;
-    border-radius: 8px;
+    cursor: pointer;
 }
 
 .action:hover {
@@ -258,6 +366,7 @@ textarea {
     border: none;
     border-radius: 10px;
     padding: 0 20px;
+    cursor: pointer;
 }
 
 @media (max-width: 600px) {
@@ -272,10 +381,6 @@ textarea {
         padding: 10px;
     }
 
-    .send {
-        padding: 0 15px;
-    }
-
 }
 
 </style>
@@ -288,28 +393,36 @@ textarea {
 
 <h1>⚡ RAIZEN</h1>
 
-<p>Your AI Assistant</p>
+<p>AI Assistant • Live Information</p>
 
 </div>
+
 
 <div class="controls">
 
 <select id="personality">
 
 <option>Friendly</option>
+
 <option>Teacher</option>
+
 <option>Coding Assistant</option>
+
 <option>Professional</option>
 
 </select>
 
+
 <select id="style">
 
 <option>Short</option>
+
 <option selected>Balanced</option>
+
 <option>Detailed</option>
 
 </select>
+
 
 <button
     class="action"
@@ -318,6 +431,7 @@ textarea {
 New Chat
 
 </button>
+
 
 <button
     class="action"
@@ -329,10 +443,12 @@ Clear Chat
 
 </div>
 
+
 <div
     id="chat"
     class="chat">
 </div>
+
 
 <div class="search-box">
 
@@ -341,6 +457,7 @@ Clear Chat
     placeholder="Ask RAIZEN anything..."
     onkeydown="handleKey(event)">
 </textarea>
+
 
 <button
     class="send"
@@ -351,6 +468,7 @@ Send
 </button>
 
 </div>
+
 
 <script>
 
@@ -475,7 +593,7 @@ async function sendMessage() {
 
     displayMessage(
         "assistant",
-        "🌐 RAIZEN is thinking..."
+        "⚡ RAIZEN is thinking..."
     );
 
     const personality =
@@ -636,34 +754,34 @@ def chat(request: ChatRequest):
         STYLES["Balanced"]
     )
 
-    search_context = ""
+    live_context = ""
 
-    if needs_web_search(
+    if needs_live_search(
         request.message
     ):
 
-        results = web_search(
+        results = live_search(
             request.message
         )
 
         if results:
 
-            search_context = (
-                "\n\nWEB SEARCH RESULTS:\n"
-                "Use these results as "
-                "supporting information:\n"
+            live_context = (
+                "\n\nLIVE INFORMATION "
+                "FROM WEB SOURCES:\n"
+                "Use these sources when "
+                "answering. Do not invent "
+                "information.\n"
             )
 
             for index, result in enumerate(
                 results,
-                start=1
+                1
             ):
 
-                search_context += (
+                live_context += (
                     f"\n{index}. "
-                    f"{result['title']}\n"
-                    f"Source: "
-                    f"{result['href']}\n"
+                    f"{result}\n"
                 )
 
     system_prompt = f"""
@@ -685,16 +803,14 @@ Rules:
 
 - Be helpful and accurate.
 - Use conversation history when useful.
-- If web search results are provided, use them.
-- Do not claim that you searched the web if no
-  search results were provided.
-- Do not invent facts or sources.
-- Explain things clearly.
+- If live web information is provided, use it.
+- Clearly say when information could not be found.
+- Never invent sources.
+- Never pretend you searched if no live results exist.
+- Keep answers natural and easy to understand.
+
+{live_context}
 """
-
-    if search_context:
-
-        system_prompt += search_context
 
     messages = [
         {
@@ -757,5 +873,5 @@ def health():
         "status": "RAIZEN online",
         "token_loaded": bool(HF_TOKEN),
         "model": MODEL,
-        "web_search": True
+        "live_search": True
     }
