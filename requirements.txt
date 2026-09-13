@@ -4,6 +4,6 @@ requirements.txt
 
 
 fastapi
-uvicorn
+uvicorn[standard]
 huggingface_hub
 ddgs
