@@ -1,11 +1,14 @@
 import os
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
 from ddgs import DDGS
 
+
 app = FastAPI()
+
 
 # =========================
 # HUGGING FACE CONFIG
@@ -43,6 +46,7 @@ personality_prompts = {
     "Professional": "Use a professional, polished and formal communication style."
 }
 
+
 style_prompts = {
     "Short": "Keep answers concise and direct.",
     "Balanced": "Give a balanced answer with enough explanation but avoid unnecessary length.",
@@ -78,7 +82,7 @@ def web_search(query):
 
 
 # =========================
-# WEB SEARCH DETECTION
+# SEARCH DETECTION
 # =========================
 
 def needs_web_search(message):
@@ -100,7 +104,11 @@ def needs_web_search(message):
 
     message_lower = message.lower()
 
-    return any(keyword in message_lower for keyword in keywords)
+    for keyword in keywords:
+        if keyword in message_lower:
+            return True
+
+    return False
 
 
 # =========================
@@ -109,7 +117,6 @@ def needs_web_search(message):
 
 @app.get("/", response_class=HTMLResponse)
 def home():
-
     return """
 <!DOCTYPE html>
 <html>
@@ -159,18 +166,29 @@ body {
     background: #0a1020;
 }
 
-select,
-button,
-textarea {
-    font-family: inherit;
-}
-
 select {
     background: #111a2d;
     color: white;
     border: 1px solid #293653;
     padding: 10px;
     border-radius: 8px;
+}
+
+button {
+    font-family: inherit;
+}
+
+.action {
+    background: #111a2d;
+    color: white;
+    border: 1px solid #293653;
+    padding: 9px 13px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.action:hover {
+    background: #1b2944;
 }
 
 .chat {
@@ -216,6 +234,7 @@ textarea {
     border: 1px solid #293653;
     border-radius: 10px;
     padding: 12px;
+    outline: none;
 }
 
 .send {
@@ -229,15 +248,6 @@ textarea {
 
 .send:hover {
     background: #1d4ed8;
-}
-
-.action {
-    background: #111a2d;
-    color: white;
-    border: 1px solid #293653;
-    padding: 9px 13px;
-    border-radius: 8px;
-    cursor: pointer;
 }
 
 </style>
@@ -316,12 +326,10 @@ let history = JSON.parse(
 
 
 function saveHistory() {
-
     localStorage.setItem(
         "raizen_history",
         JSON.stringify(history)
     );
-
 }
 
 
@@ -331,9 +339,11 @@ function displayMessage(role, text) {
 
     const div = document.createElement("div");
 
-    div.className =
-        "message " +
-        (role === "user" ? "user" : "raizen");
+    if (role === "user") {
+        div.className = "message user";
+    } else {
+        div.className = "message raizen";
+    }
 
     div.textContent = text;
 
@@ -343,7 +353,6 @@ function displayMessage(role, text) {
         0,
         document.body.scrollHeight
     );
-
 }
 
 
@@ -351,7 +360,7 @@ function loadHistory() {
 
     document.getElementById("chat").innerHTML = "";
 
-    history.forEach(item => {
+    history.forEach(function(item) {
 
         displayMessage(
             item.role,
@@ -359,7 +368,6 @@ function loadHistory() {
         );
 
     });
-
 }
 
 
@@ -370,7 +378,6 @@ function newChat() {
     saveHistory();
 
     loadHistory();
-
 }
 
 
@@ -381,7 +388,6 @@ function clearChat() {
     saveHistory();
 
     loadHistory();
-
 }
 
 
@@ -417,7 +423,7 @@ async function sendMessage() {
 
     displayMessage(
         "assistant",
-        "RAIZEN is thinking..."
+        "🌐 RAIZEN is thinking..."
     );
 
 
@@ -435,9 +441,9 @@ async function sendMessage() {
 
     try {
 
-        const response =
-            await fetch("/chat", {
-
+        const response = await fetch(
+            "/chat",
+            {
                 method: "POST",
 
                 headers: {
@@ -449,7 +455,8 @@ async function sendMessage() {
 
                     message: message,
 
-                    history: history.slice(-12),
+                    history:
+                        history.slice(-12),
 
                     personality:
                         personality,
@@ -458,8 +465,8 @@ async function sendMessage() {
                         responseStyle
 
                 })
-
-            });
+            }
+        );
 
 
         const data =
@@ -470,9 +477,9 @@ async function sendMessage() {
             document.getElementById("chat");
 
 
-        chat.removeChild(
-            chat.lastChild
-        );
+        if (chat.lastChild) {
+            chat.removeChild(chat.lastChild);
+        }
 
 
         if (!response.ok) {
@@ -494,11 +501,8 @@ async function sendMessage() {
 
 
         history.push({
-
             role: "assistant",
-
             content: data.reply
-
         });
 
 
@@ -510,18 +514,17 @@ async function sendMessage() {
         const chat =
             document.getElementById("chat");
 
-        chat.removeChild(
-            chat.lastChild
-        );
+
+        if (chat.lastChild) {
+            chat.removeChild(chat.lastChild);
+        }
 
 
         displayMessage(
             "assistant",
             "Connection error. Please try again."
         );
-
     }
-
 }
 
 
@@ -535,9 +538,7 @@ function handleKey(event) {
         event.preventDefault();
 
         sendMessage();
-
     }
-
 }
 
 
@@ -560,29 +561,26 @@ loadHistory();
 def chat(request: ChatRequest):
 
     if not HF_TOKEN:
-
         raise HTTPException(
             status_code=500,
             detail="HF_TOKEN is not configured on the server."
         )
 
 
-    personality =
-        personality_prompts.get(
-            request.personality,
-            personality_prompts["Friendly"]
-        )
+    personality = personality_prompts.get(
+        request.personality,
+        personality_prompts["Friendly"]
+    )
 
 
-    response_style =
-        style_prompts.get(
-            request.response_style,
-            style_prompts["Balanced"]
-        )
+    response_style = style_prompts.get(
+        request.response_style,
+        style_prompts["Balanced"]
+    )
 
 
     # =========================
-    # OPTIONAL WEB SEARCH
+    # WEB SEARCH
     # =========================
 
     search_context = ""
@@ -617,7 +615,6 @@ def chat(request: ChatRequest):
     # =========================
 
     system_prompt = f"""
-
 You are RAIZEN, an advanced futuristic AI assistant.
 
 You were created and developed by Raihan Kausar.
@@ -635,34 +632,29 @@ Response style:
 Important rules:
 
 - Be helpful and accurate.
+- Use conversation history when useful.
 - If web search results are provided, use them
-  to answer questions about current information.
-- Do not pretend that you searched the web if
+  to answer current-information questions.
+- Do not pretend you searched the web when
   no search results were provided.
-- When using web information, clearly mention
-  that the information came from web search.
 - Do not invent facts or sources.
 - Explain things clearly.
-
 """
 
 
     if search_context:
-
         system_prompt += search_context
 
 
     # =========================
-    # BUILD MESSAGES
+    # MESSAGE HISTORY
     # =========================
 
     messages = [
-
         {
             "role": "system",
             "content": system_prompt
         }
-
     ]
 
 
@@ -681,11 +673,8 @@ Important rules:
         if role in ["user", "assistant"]:
 
             messages.append({
-
                 "role": role,
-
                 "content": content
-
             })
 
 
@@ -695,20 +684,14 @@ Important rules:
 
     try:
 
-        response =
-            client.chat.completions.create(
-
-                model=MODEL,
-
-                messages=messages,
-
-                max_tokens=500
-
-            )
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            max_tokens=500
+        )
 
 
-        reply =
-            response.choices[0].message.content
+        reply = response.choices[0].message.content
 
 
         return {
@@ -719,11 +702,8 @@ Important rules:
     except Exception as e:
 
         raise HTTPException(
-
             status_code=500,
-
             detail=f"AI error: {str(e)}"
-
         )
 
 
@@ -735,13 +715,8 @@ Important rules:
 def health():
 
     return {
-
         "status": "RAIZEN online",
-
         "token_loaded": bool(HF_TOKEN),
-
         "model": MODEL,
-
         "web_search": True
-
     }
