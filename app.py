@@ -890,6 +890,56 @@ function displayMessage(role, text, extraClass) {
     return div;
 }
 
+async function analyzeImage() {
+    const input = document.getElementById("imageInput");
+    const messageInput = document.getElementById("messageInput");
+
+    if (!input.files.length) {
+        alert("Please select an image first.");
+        return;
+    }
+
+    const file = input.files[0];
+
+    if (file.size > 8 * 1024 * 1024) {
+        alert("Image must be smaller than 8 MB.");
+        return;
+    }
+
+    const allowed = ["image/png", "image/jpeg", "image/webp"];
+
+    if (!allowed.includes(file.type)) {
+        alert("Please upload PNG, JPG, JPEG, or WEBP.");
+        return;
+    }
+
+    displayMessage("You", "🖼️ Analyzing image...");
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append(
+        "message",
+        messageInput.value.trim() || "Describe this image."
+    );
+
+    try {
+        const response = await fetch("/vision", {
+            method: "POST",
+            body: formData
+        });
+
+        const data = await response.json();
+
+        displayMessage("RAIZEN", data.reply);
+
+    } catch (error) {
+        displayMessage(
+            "RAIZEN",
+            "⚠️ I couldn't analyze the image right now."
+        );
+    }
+}
+
 async function sendMessage() {
     const input = document.getElementById("messageInput");
     const button = document.getElementById("sendButton");
