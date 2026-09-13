@@ -761,6 +761,17 @@ select,
 <button class="control" onclick="clearDocument()">Remove document</button>
 </div>
 
+<div class="file-panel">
+<input id="imageInput" class="file-input" type="file"
+       accept=".png,.jpg,.jpeg,.webp">
+
+<span id="imageName" class="file-name">No image selected</span>
+
+<button class="control" onclick="analyzeImage()">
+🖼️ Analyze Image
+</button>
+</div>
+
 <div class="input-area">
 
 <input
