@@ -30,6 +30,7 @@ class ChatRequest(BaseModel):
     personality: str = "Friendly"
     response_style: str = "Balanced"
     custom_instructions: str = ""
+    document_text: str = ""
 
 
 
