@@ -7,7 +7,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
@@ -1087,7 +1087,7 @@ async def home():
 @app.post("/vision")
 async def vision(
     file: UploadFile = File(...),
-    message: str = "Describe this image."
+    message: str = Form("Describe this image.")
 ):
     filename = file.filename or "image"
 
