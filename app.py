@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import base64
 from datetime import datetime, timezone
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -19,6 +20,12 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 MODEL = "zai-org/GLM-5.3-Flash"
 
 client = InferenceClient(
+    provider="novita",
+    api_key=HF_TOKEN
+)
+VISION_MODEL = "Qwen/Qwen2.5-VL-3B-Instruct"
+
+vision_client = InferenceClient(
     provider="novita",
     api_key=HF_TOKEN
 )
