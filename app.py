@@ -2,17 +2,13 @@ import os
 import json
 import re
 from urllib.parse import quote
-from urllib.request import urlopen, Request
+from urllib.request import Request, urlopen
+import xml.etree.ElementTree as ET
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
-
-
-# ============================================================
-# RAIZEN
-# ============================================================
 
 app = FastAPI()
 
@@ -25,51 +21,6 @@ client = InferenceClient(
 )
 
 
-# ============================================================
-# PERSONALITY / RESPONSE STYLE
-# ============================================================
-
-PERSONALITIES = {
-    "Friendly": (
-        "Be friendly, natural, helpful and easy to talk to. "
-        "Use simple language."
-    ),
-
-    "Teacher": (
-        "Act like a good teacher. Explain concepts clearly "
-        "with simple examples and step-by-step explanations."
-    ),
-
-    "Coding Assistant": (
-        "Focus on programming, debugging and technical accuracy. "
-        "Give practical code and explain important parts."
-    ),
-
-    "Professional": (
-        "Use a professional, clear and structured communication style."
-    )
-}
-
-
-STYLES = {
-    "Short": (
-        "Keep the answer short and direct unless more detail is necessary."
-    ),
-
-    "Balanced": (
-        "Give a balanced answer with enough explanation but avoid unnecessary length."
-    ),
-
-    "Detailed": (
-        "Give a detailed explanation with useful examples and steps."
-    )
-}
-
-
-# ============================================================
-# REQUEST MODEL
-# ============================================================
-
 class ChatRequest(BaseModel):
     message: str
     history: list = []
@@ -78,14 +29,23 @@ class ChatRequest(BaseModel):
     custom_instructions: str = ""
 
 
-# ============================================================
-# LIVE SEARCH DETECTION
-# ============================================================
+PERSONALITIES = {
+    "Friendly": "Be friendly, natural, helpful and easy to understand.",
+    "Teacher": "Explain like a good teacher using simple step-by-step examples.",
+    "Coding Assistant": "Focus on accurate programming help, debugging and practical code.",
+    "Professional": "Use a professional, clear and structured communication style."
+}
+
+
+STYLES = {
+    "Short": "Keep answers concise and direct.",
+    "Balanced": "Give a balanced answer with useful explanation.",
+    "Detailed": "Give detailed explanations and examples when useful."
+}
+
 
 def needs_live_search(message):
-    text = message.lower()
-
-    keywords = [
+    words = [
         "latest",
         "today",
         "current",
@@ -101,26 +61,23 @@ def needs_live_search(message):
         "forecast"
     ]
 
-    return any(word in text for word in keywords)
+    text = message.lower()
 
+    return any(word in text for word in words)
 
-# ============================================================
-# GOOGLE NEWS SEARCH
-# ============================================================
 
 def google_news_search(query):
 
     try:
-        rss_url = (
-            "https://news.google.com/rss/search?"
-            f"q={quote(query)}"
-            "&hl=en-IN"
-            "&gl=IN"
-            "&ceid=IN:en"
+
+        url = (
+            "https://news.google.com/rss/search?q="
+            + quote(query)
+            + "&hl=en-IN&gl=IN&ceid=IN:en"
         )
 
         request = Request(
-            rss_url,
+            url,
             headers={
                 "User-Agent": "Mozilla/5.0"
             }
@@ -129,34 +86,30 @@ def google_news_search(query):
         with urlopen(request, timeout=10) as response:
             data = response.read().decode("utf-8")
 
-        import xml.etree.ElementTree as ET
-
         root = ET.fromstring(data)
 
         results = []
 
         for item in root.findall(".//item")[:5]:
 
-            title = item.findtext("title")
-            link = item.findtext("link")
-            pub_date = item.findtext("pubDate")
+            title = item.findtext("title") or ""
+            date = item.findtext("pubDate") or ""
 
             if title:
+
                 results.append({
                     "title": title,
-                    "link": link,
-                    "date": pub_date
+                    "date": date
                 })
 
         return results
 
-    except Exception:
+    except Exception as error:
+
+        print("NEWS ERROR:", error)
+
         return []
 
-
-# ============================================================
-# WIKIPEDIA SEARCH
-# ============================================================
 
 def wikipedia_search(query):
 
@@ -164,11 +117,10 @@ def wikipedia_search(query):
 
         url = (
             "https://en.wikipedia.org/w/api.php?"
-            "action=query"
-            "&format=json"
-            "&list=search"
-            f"&srsearch={quote(query)}"
-            "&srlimit=3"
+            "action=query&format=json&list=search"
+            "&srsearch="
+            + quote(query)
+            + "&srlimit=3"
         )
 
         request = Request(
@@ -179,14 +131,17 @@ def wikipedia_search(query):
         )
 
         with urlopen(request, timeout=10) as response:
-            data = json.loads(response.read().decode("utf-8"))
+
+            data = json.loads(
+                response.read().decode("utf-8")
+            )
 
         results = []
 
         for item in data.get("query", {}).get("search", []):
 
             results.append({
-                "title": item.get("title"),
+                "title": item.get("title", ""),
                 "snippet": re.sub(
                     "<.*?>",
                     "",
@@ -196,13 +151,12 @@ def wikipedia_search(query):
 
         return results
 
-    except Exception:
+    except Exception as error:
+
+        print("WIKIPEDIA ERROR:", error)
+
         return []
 
-
-# ============================================================
-# WEATHER - OPEN METEO
-# ============================================================
 
 def weather_open_meteo(city):
 
@@ -215,10 +169,9 @@ def weather_open_meteo(city):
 
         geo_url = (
             "https://geocoding-api.open-meteo.com/v1/search"
-            f"?name={quote(city)}"
-            "&count=10"
-            "&language=en"
-            "&format=json"
+            "?name="
+            + quote(city)
+            + "&count=10&language=en&format=json"
         )
 
         request = Request(
@@ -229,61 +182,58 @@ def weather_open_meteo(city):
         )
 
         with urlopen(request, timeout=10) as response:
+
             geo_data = json.loads(
                 response.read().decode("utf-8")
             )
 
-        locations = geo_data.get("results", [])
+        locations = geo_data.get(
+            "results",
+            []
+        )
 
         if not locations:
             return None
 
-        city_clean = city.lower().strip()
+        city_clean = city.lower()
 
-        exact_match = None
+        location = None
 
-        for location in locations:
+        for item in locations:
 
-            name = location.get(
+            name = item.get(
                 "name",
                 ""
             ).strip().lower()
 
             if name == city_clean:
-                exact_match = location
+
+                location = item
+
                 break
 
-        if exact_match:
-            location = exact_match
+        if location is None:
 
-        else:
+            location = locations[0]
 
-            starts_match = None
+        latitude = location.get(
+            "latitude"
+        )
 
-            for item in locations:
-
-                name = item.get(
-                    "name",
-                    ""
-                ).strip().lower()
-
-                if name.startswith(city_clean):
-                    starts_match = item
-                    break
-
-            location = starts_match or locations[0]
-
-        latitude = location.get("latitude")
-        longitude = location.get("longitude")
+        longitude = location.get(
+            "longitude"
+        )
 
         if latitude is None or longitude is None:
             return None
 
         weather_url = (
             "https://api.open-meteo.com/v1/forecast?"
-            f"latitude={latitude}"
-            f"&longitude={longitude}"
-            "&current="
+            "latitude="
+            + str(latitude)
+            + "&longitude="
+            + str(longitude)
+            + "&current="
             "temperature_2m,"
             "relative_humidity_2m,"
             "apparent_temperature,"
@@ -301,96 +251,82 @@ def weather_open_meteo(city):
         )
 
         with urlopen(request, timeout=10) as response:
+
             weather_data = json.loads(
                 response.read().decode("utf-8")
             )
 
-        current = weather_data.get("current", {})
+        current = weather_data.get(
+            "current",
+            {}
+        )
 
-        temperature = current.get("temperature_2m")
-        humidity = current.get("relative_humidity_2m")
-        feels_like = current.get("apparent_temperature")
-        precipitation = current.get("precipitation")
-        wind = current.get("wind_speed_10m")
-        weather_code = current.get("weather_code")
-
-        weather_names = {
+        codes = {
             0: "Clear sky",
             1: "Mainly clear",
             2: "Partly cloudy",
             3: "Overcast",
             45: "Fog",
-            48: "Depositing rime fog",
+            48: "Fog",
             51: "Light drizzle",
-            53: "Moderate drizzle",
-            55: "Dense drizzle",
-            61: "Slight rain",
+            53: "Drizzle",
+            55: "Heavy drizzle",
+            61: "Light rain",
             63: "Moderate rain",
             65: "Heavy rain",
-            71: "Slight snow",
-            73: "Moderate snow",
-            75: "Heavy snow",
-            80: "Slight rain showers",
-            81: "Moderate rain showers",
-            82: "Violent rain showers",
+            80: "Rain showers",
+            81: "Rain showers",
+            82: "Heavy rain showers",
             95: "Thunderstorm",
-            96: "Thunderstorm with slight hail",
-            99: "Thunderstorm with heavy hail"
+            96: "Thunderstorm",
+            99: "Thunderstorm"
         }
 
-        condition = weather_names.get(
-            weather_code,
+        condition = codes.get(
+            current.get("weather_code"),
             "Unknown"
         )
 
-        actual_city = location.get(
-            "name",
-            city
+        return (
+            "Current weather for "
+            + location.get("name", city)
+            + ", "
+            + location.get("country", "")
+            + "\n\n"
+            + "Condition: "
+            + condition
+            + "\n"
+            + "Temperature: "
+            + str(current.get("temperature_2m"))
+            + "°C\n"
+            + "Feels like: "
+            + str(current.get("apparent_temperature"))
+            + "°C\n"
+            + "Humidity: "
+            + str(current.get("relative_humidity_2m"))
+            + "%\n"
+            + "Precipitation: "
+            + str(current.get("precipitation"))
+            + " mm\n"
+            + "Wind speed: "
+            + str(current.get("wind_speed_10m"))
+            + " km/h\n\n"
+            + "Source: Open-Meteo"
         )
 
-        country = location.get(
-            "country",
-            ""
-        )
+    except Exception as error:
 
-        result = (
-            f"Current weather for {actual_city}, {country}\n\n"
-            f"Condition: {condition}\n"
-            f"Temperature: {temperature}°C\n"
-            f"Feels like: {feels_like}°C\n"
-            f"Humidity: {humidity}%\n"
-            f"Precipitation: {precipitation} mm\n"
-            f"Wind speed: {wind} km/h\n\n"
-            f"Source: Open-Meteo"
-        )
+        print("WEATHER ERROR:", error)
 
-        return result
-
-    except Exception:
         return None
 
 
-# ============================================================
-# WEATHER SEARCH
-# ============================================================
-
 def weather_search(city):
 
-    result = weather_open_meteo(city)
+    return weather_open_meteo(city)
 
-    if result:
-        return result
-
-    return None
-
-
-# ============================================================
-# EXTRACT CITY FROM WEATHER QUERY
-# ============================================================
 
 def extract_city(message):
-
-    text = message.strip()
 
     patterns = [
         r"weather\s+(?:in|at|of)\s+(.+)",
@@ -404,7 +340,7 @@ def extract_city(message):
 
         match = re.search(
             pattern,
-            text,
+            message.strip(),
             re.IGNORECASE
         )
 
@@ -419,7 +355,9 @@ def extract_city(message):
                 flags=re.IGNORECASE
             )
 
-            city = city.strip(" ?.,!")
+            city = city.strip(
+                " ?.,!"
+            )
 
             if city:
                 return city
@@ -427,15 +365,10 @@ def extract_city(message):
     return None
 
 
-# ============================================================
-# LIVE SEARCH
-# ============================================================
-
 def live_search(message):
 
     text = message.lower()
 
-    # WEATHER
     if (
         "weather" in text
         or "temperature" in text
@@ -445,7 +378,11 @@ def live_search(message):
         city = extract_city(message)
 
         if not city:
-            return "WEATHER_ERROR: Please provide a city name."
+
+            return (
+                "WEATHER_ERROR: "
+                "Please provide a city name."
+            )
 
         result = weather_search(city)
 
@@ -453,11 +390,10 @@ def live_search(message):
             return result
 
         return (
-            "WEATHER_ERROR: Weather data could not be retrieved "
-            "right now. Please try again later."
+            "WEATHER_ERROR: "
+            "Weather data could not be retrieved right now."
         )
 
-    # NEWS
     news = google_news_search(message)
 
     if news:
@@ -467,13 +403,16 @@ def live_search(message):
         for index, item in enumerate(news, 1):
 
             output += (
-                f"{index}. {item.get('title', 'No title')}\n"
-                f"Date: {item.get('date', 'Unknown')}\n\n"
+                str(index)
+                + ". "
+                + item["title"]
+                + "\nDate: "
+                + item["date"]
+                + "\n\n"
             )
 
         return output
 
-    # WIKIPEDIA FALLBACK
     wiki = wikipedia_search(message)
 
     if wiki:
@@ -483,20 +422,23 @@ def live_search(message):
         for index, item in enumerate(wiki, 1):
 
             output += (
-                f"{index}. {item.get('title', 'No title')}\n"
-                f"{item.get('snippet', '')}\n\n"
+                str(index)
+                + ". "
+                + item["title"]
+                + "\n"
+                + item["snippet"]
+                + "\n\n"
             )
 
         return output
 
-    return "LIVE_SEARCH_ERROR: Live search could not retrieve data."
+    return (
+        "LIVE_SEARCH_ERROR: "
+        "Live search could not retrieve data."
+    )
 
 
-# ============================================================
-# HTML
-# ============================================================
-
-HTML = """
+HTML = r"""
 <!DOCTYPE html>
 
 <html>
@@ -514,261 +456,119 @@ HTML = """
 }
 
 body {
-
     margin: 0;
-
-    font-family:
-        -apple-system,
-        BlinkMacSystemFont,
-        "Segoe UI",
-        sans-serif;
-
-    background:
-        radial-gradient(
-            circle at top,
-            #17213d,
-            #080b14 55%
-        );
-
+    font-family: Arial, sans-serif;
+    background: #080b14;
     color: white;
-
-    min-height: 100vh;
 }
 
 .container {
-
-    max-width: 1100px;
-
-    margin: auto;
-
+    max-width: 1000px;
     height: 100vh;
-
+    margin: auto;
+    padding: 15px;
     display: flex;
-
     flex-direction: column;
-
-    padding: 18px;
 }
 
 .header {
-
+    padding: 15px;
+    background: #11192d;
+    border: 1px solid #293653;
+    border-radius: 16px;
+    margin-bottom: 12px;
     display: flex;
-
-    align-items: center;
-
     justify-content: space-between;
-
-    padding: 14px 18px;
-
-    background: rgba(20, 28, 50, 0.85);
-
-    border: 1px solid #273556;
-
-    border-radius: 18px;
-
-    margin-bottom: 14px;
-
-    backdrop-filter: blur(12px);
 }
 
 .logo {
-
     font-size: 24px;
-
-    font-weight: 800;
-
-    letter-spacing: 1px;
+    font-weight: bold;
 }
 
 .status {
-
-    font-size: 12px;
-
-    color: #8db4ff;
+    opacity: .7;
+    font-size: 13px;
 }
 
 .chat {
-
     flex: 1;
-
     overflow-y: auto;
-
-    padding: 10px 4px 20px;
-
-    display: flex;
-
-    flex-direction: column;
-
-    gap: 12px;
+    padding: 10px 0;
 }
 
 .message {
-
     max-width: 82%;
-
-    padding: 13px 16px;
-
-    border-radius: 16px;
-
-    line-height: 1.55;
-
+    padding: 12px 15px;
+    margin: 8px 0;
+    border-radius: 15px;
     white-space: pre-wrap;
-
-    word-wrap: break-word;
+    line-height: 1.5;
 }
 
 .user {
-
-    align-self: flex-end;
-
+    margin-left: auto;
     background: #2463eb;
-
-    border-bottom-right-radius: 5px;
 }
 
 .assistant {
-
-    align-self: flex-start;
-
     background: #151d31;
-
     border: 1px solid #293653;
-
-    border-bottom-left-radius: 5px;
 }
 
 .thinking {
-
-    opacity: 0.7;
-
-    border: 1px solid #293653;
-}
-
-.input-area {
-
-    display: flex;
-
-    gap: 10px;
-
-    padding-top: 10px;
-}
-
-.input {
-
-    flex: 1;
-
-    background: #10172a;
-
-    color: white;
-
-    border: 1px solid #2a3859;
-
-    outline: none;
-
-    border-radius: 15px;
-
-    padding: 14px 16px;
-
-    font-size: 15px;
-}
-
-.input:focus {
-
-    border-color: #4d7cff;
-}
-
-.send {
-
-    border: none;
-
-    border-radius: 15px;
-
-    padding: 0 22px;
-
-    background: #2867f0;
-
-    color: white;
-
-    font-weight: 700;
-
-    cursor: pointer;
-}
-
-.send:hover {
-
-    background: #3b75f2;
-}
-
-.send:disabled {
-
-    opacity: 0.6;
-
-    cursor: not-allowed;
+    opacity: .7;
 }
 
 .controls {
-
     display: flex;
-
     gap: 8px;
-
-    margin-top: 10px;
-
+    margin-bottom: 8px;
     flex-wrap: wrap;
 }
 
 select,
-button.control {
-
+.control {
     background: #11192d;
-
     color: white;
-
-    border: 1px solid #2a3859;
-
+    border: 1px solid #293653;
     border-radius: 10px;
-
-    padding: 8px 11px;
+    padding: 8px;
 }
 
-button.control {
+.input-area {
+    display: flex;
+    gap: 8px;
+}
 
+#messageInput {
+    flex: 1;
+    padding: 13px;
+    background: #11192d;
+    color: white;
+    border: 1px solid #293653;
+    border-radius: 13px;
+    outline: none;
+}
+
+#sendButton {
+    padding: 0 20px;
+    background: #2463eb;
+    color: white;
+    border: 0;
+    border-radius: 13px;
     cursor: pointer;
 }
 
-.empty {
-
-    margin: auto;
-
-    text-align: center;
-
-    opacity: 0.65;
+#sendButton:disabled {
+    opacity: .6;
 }
 
 .small {
-
-    font-size: 12px;
-
-    opacity: 0.6;
-
     text-align: center;
-
-    padding-top: 8px;
-}
-
-@media(max-width: 600px) {
-
-    .container {
-        padding: 10px;
-    }
-
-    .message {
-        max-width: 92%;
-    }
-
-    .send {
-        padding: 0 16px;
-    }
+    opacity: .5;
+    font-size: 12px;
+    margin-top: 8px;
 }
 
 </style>
@@ -779,93 +579,85 @@ button.control {
 
 <div class="container">
 
-    <div class="header">
+<div class="header">
 
-        <div class="logo">
-            ⚡ RAIZEN
-        </div>
+<div class="logo">
+⚡ RAIZEN
+</div>
 
-        <div class="status">
-            AI ONLINE
-        </div>
+<div class="status">
+AI ONLINE
+</div>
 
-    </div>
-
-
-    <div id="chat" class="chat">
-
-        <div id="empty" class="empty">
-
-            <h2>⚡ Welcome to RAIZEN</h2>
-
-            <p>
-                Ask me anything.
-            </p>
-
-        </div>
-
-    </div>
+</div>
 
 
-    <div class="controls">
+<div id="chat" class="chat">
 
-        <select id="personality">
+<div id="welcome" class="assistant message">
+⚡ Welcome to RAIZEN. Ask me anything.
+</div>
 
-            <option>Friendly</option>
-            <option>Teacher</option>
-            <option>Coding Assistant</option>
-            <option>Professional</option>
-
-        </select>
+</div>
 
 
-        <select id="responseStyle">
+<div class="controls">
 
-            <option>Short</option>
-            <option selected>Balanced</option>
-            <option>Detailed</option>
+<select id="personality">
 
-        </select>
+<option>Friendly</option>
+<option>Teacher</option>
+<option>Coding Assistant</option>
+<option>Professional</option>
 
-
-        <button
-            class="control"
-            onclick="newChat()">
-            New Chat
-        </button>
+</select>
 
 
-        <button
-            class="control"
-            onclick="clearChat()">
-            Clear Chat
-        </button>
+<select id="responseStyle">
 
-    </div>
+<option>Short</option>
+<option selected>Balanced</option>
+<option>Detailed</option>
 
-
-    <div class="input-area">
-
-        <input
-            id="messageInput"
-            class="input"
-            placeholder="Message RAIZEN..."
-            autocomplete="off"
-        >
-
-        <button
-            id="sendButton"
-            class="send"
-            onclick="sendMessage()">
-            Send
-        </button>
-
-    </div>
+</select>
 
 
-    <div class="small">
-        RAIZEN • Created and developed by Raihan Kausar
-    </div>
+<button
+class="control"
+onclick="newChat()">
+New Chat
+</button>
+
+
+<button
+class="control"
+onclick="clearChat()">
+Clear Chat
+</button>
+
+</div>
+
+
+<div class="input-area">
+
+<input
+id="messageInput"
+placeholder="Message RAIZEN..."
+autocomplete="off"
+>
+
+<button
+id="sendButton"
+onclick="sendMessage()">
+Send
+</button>
+
+</div>
+
+
+<div class="small">
+RAIZEN • Created and developed by Raihan Kausar
+</div>
 
 </div>
 
@@ -879,69 +671,37 @@ function saveHistory() {
 
     localStorage.setItem(
         "raizen_chat_history",
-        JSON.stringify(chatHistory.slice(-12))
+        JSON.stringify(
+            chatHistory.slice(-12)
+        )
     );
-}
-
-
-function loadHistory() {
-
-    try {
-
-        const saved =
-            localStorage.getItem(
-                "raizen_chat_history"
-            );
-
-        if (!saved) {
-            return;
-        }
-
-        chatHistory =
-            JSON.parse(saved);
-
-        for (
-            const item of chatHistory
-        ) {
-
-            displayMessage(
-                item.role,
-                item.content
-            );
-        }
-
-    } catch (error) {
-
-        chatHistory = [];
-
-    }
 }
 
 
 function displayMessage(
     role,
     text,
-    extraClass = ""
+    extraClass
 ) {
 
     const chat =
         document.getElementById("chat");
 
-    const empty =
-        document.getElementById("empty");
+    const welcome =
+        document.getElementById("welcome");
 
-    if (empty) {
-        empty.remove();
+    if (welcome) {
+        welcome.remove();
     }
 
     const div =
         document.createElement("div");
 
     div.className =
-        "message " +
-        role +
-        " " +
-        extraClass;
+        "message "
+        + role
+        + " "
+        + (extraClass || "");
 
     div.textContent = text;
 
@@ -961,7 +721,7 @@ async function sendMessage() {
             "messageInput"
         );
 
-    const sendButton =
+    const button =
         document.getElementById(
             "sendButton"
         );
@@ -969,13 +729,13 @@ async function sendMessage() {
     const message =
         input.value.trim();
 
-    if (!message) {
+    if (!message || button.disabled) {
         return;
     }
 
     input.value = "";
 
-    sendButton.disabled = true;
+    button.disabled = true;
 
 
     displayMessage(
@@ -990,24 +750,12 @@ async function sendMessage() {
     });
 
 
-    const thinkingMessage =
+    const thinking =
         displayMessage(
             "assistant",
             "⚡ RAIZEN is thinking...",
             "thinking"
         );
-
-
-    const personality =
-        document.getElementById(
-            "personality"
-        ).value;
-
-
-    const responseStyle =
-        document.getElementById(
-            "responseStyle"
-        ).value;
 
 
     try {
@@ -1031,10 +779,14 @@ async function sendMessage() {
                             chatHistory.slice(-12),
 
                         personality:
-                            personality,
+                            document.getElementById(
+                                "personality"
+                            ).value,
 
                         response_style:
-                            responseStyle,
+                            document.getElementById(
+                                "responseStyle"
+                            ).value,
 
                         custom_instructions:
                             localStorage.getItem(
@@ -1042,7 +794,6 @@ async function sendMessage() {
                             ) || ""
 
                     })
-
                 }
             );
 
@@ -1051,14 +802,12 @@ async function sendMessage() {
             await response.json();
 
 
-        if (thinkingMessage) {
-            thinkingMessage.remove();
-        }
+        thinking.remove();
 
 
         const reply =
-            data.reply ||
-            "Sorry, I could not generate a response.";
+            data.reply
+            || "Sorry, I could not generate a response.";
 
 
         displayMessage(
@@ -1078,36 +827,33 @@ async function sendMessage() {
 
     } catch (error) {
 
-        if (thinkingMessage) {
-            thinkingMessage.remove();
-        }
+        thinking.remove();
 
 
-        const errorMessage =
+        const reply =
             "⚠️ Something went wrong. Please try again.";
 
 
         displayMessage(
             "assistant",
-            errorMessage
+            reply
         );
 
 
         chatHistory.push({
             role: "assistant",
-            content: errorMessage
+            content: reply
         });
 
 
         saveHistory();
 
-    } finally {
-
-        sendButton.disabled = false;
-
-        input.focus();
-
     }
+
+
+    button.disabled = false;
+
+    input.focus();
 
 }
 
@@ -1120,15 +866,11 @@ function clearChat() {
         "raizen_chat_history"
     );
 
-    const chat =
-        document.getElementById("chat");
 
-    chat.innerHTML = `
-        <div id="empty" class="empty">
-            <h2>⚡ Welcome to RAIZEN</h2>
-            <p>Ask me anything.</p>
-        </div>
-    `;
+    document.getElementById(
+        "chat"
+    ).innerHTML =
+        '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
 }
 
 
@@ -1145,10 +887,7 @@ document
         "keydown",
         function(event) {
 
-            if (
-                event.key === "Enter"
-                && !event.shiftKey
-            ) {
+            if (event.key === "Enter") {
 
                 event.preventDefault();
 
@@ -1160,7 +899,49 @@ document
     );
 
 
-loadHistory();
+try {
+
+    const saved =
+        localStorage.getItem(
+            "raizen_chat_history"
+        );
+
+
+    if (saved) {
+
+        chatHistory =
+            JSON.parse(saved);
+
+
+        const welcome =
+            document.getElementById(
+                "welcome"
+            );
+
+
+        if (welcome) {
+            welcome.remove();
+        }
+
+
+        chatHistory.forEach(
+            function(item) {
+
+                displayMessage(
+                    item.role,
+                    item.content
+                );
+
+            }
+        );
+
+    }
+
+} catch (error) {
+
+    chatHistory = [];
+
+}
 
 </script>
 
@@ -1170,21 +951,16 @@ loadHistory();
 """
 
 
-# ============================================================
-# HOME
-# ============================================================
-
-@app.get("/", response_class=HTMLResponse)
+@app.get(
+    "/",
+    response_class=HTMLResponse
+)
 async def home():
 
     return HTMLResponse(
         content=HTML
     )
 
-
-# ============================================================
-# CHAT
-# ============================================================
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
@@ -1194,64 +970,58 @@ async def chat(request: ChatRequest):
     if not message:
 
         return {
-            "reply": "Please enter a message."
+            "reply":
+                "Please enter a message."
         }
 
 
-    # --------------------------------------------------------
-    # DIRECT WEATHER RESPONSE
-    # --------------------------------------------------------
+    lower = message.lower()
+
 
     if (
-        "weather" in message.lower()
-        or "temperature" in message.lower()
-        or "forecast" in message.lower()
+        "weather" in lower
+        or "temperature" in lower
+        or "forecast" in lower
     ):
 
         city = extract_city(message)
+
 
         if not city:
 
             return {
                 "reply":
-                    "🌤️ Please mention a city name, "
+                    "🌤️ Please mention a city, "
                     "for example: weather in Cuttack."
             }
 
 
-        weather_result =
-            weather_search(city)
+        result = weather_search(city)
 
 
-        if weather_result:
+        if result:
 
             return {
-                "reply":
-                    weather_result
+                "reply": result
             }
 
 
         return {
             "reply":
-                "⚠️ I couldn't retrieve live weather "
-                "data right now. Please try again later."
+                "⚠️ I couldn't retrieve live "
+                "weather data right now. "
+                "Please try again later."
         }
 
-
-    # --------------------------------------------------------
-    # LIVE SEARCH
-    # --------------------------------------------------------
 
     live_data = ""
 
     if needs_live_search(message):
 
-        live_data = live_search(message)
+        live_data = live_search(
+            message
+        )
 
-
-    # --------------------------------------------------------
-    # SYSTEM PROMPT
-    # --------------------------------------------------------
 
     personality =
         PERSONALITIES.get(
@@ -1267,45 +1037,32 @@ async def chat(request: ChatRequest):
         )
 
 
-    custom =
-        request.custom_instructions.strip()
-
-
     system_prompt = f"""
-
 You are RAIZEN, an advanced AI assistant.
 
 You were created and developed by Raihan Kausar.
 
-If someone asks who invented, created, developed,
-or made you, say that Raihan Kausar created
-and developed you.
+If someone asks who created, developed,
+invented, or made you, say that Raihan Kausar
+created and developed you.
 
-PERSONALITY:
+Personality:
 {personality}
 
-RESPONSE STYLE:
+Response style:
 {style}
 
-CUSTOM USER INSTRUCTIONS:
-{custom}
+Custom instructions:
+{request.custom_instructions.strip()}
 
-IMPORTANT:
-
+Rules:
 - Be accurate and helpful.
-- Do not pretend to know information you do not know.
-- Keep explanations clear.
-- If live information is provided below, use it carefully.
-- If LIVE_SEARCH_ERROR appears, clearly tell the user
-  that live search could not retrieve data.
-- If WEATHER_ERROR appears, clearly explain that weather
-  data could not be retrieved or that a city name is required.
-- Do not treat an error message as real-world information.
-- When live information is available, mention that it is live/current.
+- Do not invent live information.
+- Use live information only when provided.
+- If live search fails, say so clearly.
 
-LIVE INFORMATION:
+Live information:
 {live_data}
-
 """
 
 
@@ -1317,18 +1074,16 @@ LIVE INFORMATION:
     ]
 
 
-    # --------------------------------------------------------
-    # HISTORY
-    # --------------------------------------------------------
-
     for item in request.history[-12:]:
 
         role = item.get("role")
-
         content = item.get("content")
 
 
-        if role in ["user", "assistant"] and content:
+        if (
+            role in ("user", "assistant")
+            and content
+        ):
 
             messages.append({
                 "role": role,
@@ -1336,12 +1091,9 @@ LIVE INFORMATION:
             })
 
 
-    # --------------------------------------------------------
-    # CURRENT MESSAGE
-    # --------------------------------------------------------
-
-    if not request.history or (
-        request.history[-1].get("content")
+    if (
+        not request.history
+        or request.history[-1].get("content")
         != message
     ):
 
@@ -1351,31 +1103,24 @@ LIVE INFORMATION:
         })
 
 
-    # --------------------------------------------------------
-    # AI RESPONSE
-    # --------------------------------------------------------
-
     try:
 
-        response = client.chat.completions.create(
-
-            model=MODEL,
-
-            messages=messages,
-
-            max_tokens=500
-
-        )
+        response =
+            client.chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                max_tokens=500
+            )
 
 
-        reply = response.choices[0].message.content
+        reply =
+            response.choices[0].message.content
 
 
         if not reply:
 
-            reply = (
+            reply =
                 "Sorry, I could not generate a response."
-            )
 
 
         return {
@@ -1387,34 +1132,23 @@ LIVE INFORMATION:
 
         print(
             "RAIZEN ERROR:",
-            str(error)
+            error
         )
+
 
         return {
             "reply":
-                "⚠️ RAIZEN is temporarily unable "
-                "to respond. Please try again."
+                "⚠️ RAIZEN is temporarily "
+                "unable to respond. Please try again."
         }
 
-
-# ============================================================
-# HEALTH CHECK
-# ============================================================
 
 @app.get("/health")
 async def health():
 
     return {
-
         "status": "ok",
-
-        "token_loaded":
-            bool(HF_TOKEN),
-
-        "model":
-            MODEL,
-
-        "live_search":
-            True
-
+        "token_loaded": bool(HF_TOKEN),
+        "model": MODEL,
+        "live_search": True
     }
