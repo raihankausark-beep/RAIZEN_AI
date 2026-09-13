@@ -1,4 +1,5 @@
 import os
+import uuid
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -18,6 +19,7 @@ client = InferenceClient(
 
 class ChatRequest(BaseModel):
     message: str
+    history: list = []
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -30,7 +32,7 @@ def home():
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>RAIZEN AI</title>
+<title>RAIZEN AI 2.0</title>
 
 <style>
 
@@ -45,30 +47,78 @@ body {
     color: white;
     height: 100vh;
     display: flex;
+    overflow: hidden;
+}
+
+/* SIDEBAR */
+
+.sidebar {
+    width: 250px;
+    background: #0b1120;
+    border-right: 1px solid #20283a;
+    padding: 20px;
+    display: flex;
     flex-direction: column;
 }
 
-/* HEADER */
-
-header {
-    height: 70px;
-    display: flex;
-    align-items: center;
-    padding: 0 30px;
-    border-bottom: 1px solid #20283a;
-    background: #0b1120;
-}
-
 .logo {
-    font-size: 25px;
+    font-size: 24px;
     font-weight: bold;
+    margin-bottom: 25px;
 }
 
 .logo span {
     color: #9b5cff;
 }
 
-/* CHAT AREA */
+.new-chat {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #303b55;
+    background: #172033;
+    color: white;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 15px;
+}
+
+.new-chat:hover {
+    background: #202b43;
+}
+
+.history-title {
+    margin-top: 30px;
+    color: #8995ad;
+    font-size: 13px;
+}
+
+.history {
+    margin-top: 10px;
+    color: #cbd3e1;
+    font-size: 14px;
+}
+
+/* MAIN */
+
+.main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* HEADER */
+
+.header {
+    height: 70px;
+    border-bottom: 1px solid #20283a;
+    display: flex;
+    align-items: center;
+    padding: 0 25px;
+    font-size: 20px;
+    font-weight: bold;
+}
+
+/* CHAT */
 
 #chat {
     flex: 1;
@@ -77,12 +127,21 @@ header {
     display: flex;
     flex-direction: column;
     gap: 18px;
-    max-width: 900px;
+    max-width: 950px;
     width: 100%;
     margin: auto;
 }
 
-/* MESSAGE BUBBLES */
+.welcome {
+    margin: auto;
+    text-align: center;
+    color: #9ca7bd;
+}
+
+.welcome h1 {
+    color: white;
+    font-size: 42px;
+}
 
 .message {
     max-width: 75%;
@@ -104,20 +163,6 @@ header {
     border-bottom-left-radius: 5px;
 }
 
-/* WELCOME */
-
-.welcome {
-    text-align: center;
-    margin: auto;
-    color: #9ca7bd;
-}
-
-.welcome h1 {
-    color: white;
-    font-size: 42px;
-    margin-bottom: 10px;
-}
-
 /* INPUT */
 
 .input-area {
@@ -127,7 +172,7 @@ header {
 }
 
 .input-box {
-    max-width: 900px;
+    max-width: 950px;
     margin: auto;
     display: flex;
     background: #172033;
@@ -145,7 +190,7 @@ input {
     font-size: 16px;
 }
 
-button {
+.send {
     background: #7c3aed;
     color: white;
     border: none;
@@ -155,16 +200,21 @@ button {
     font-size: 16px;
 }
 
-button:hover {
-    opacity: 0.9;
+.clear {
+    margin-top: 15px;
+    background: transparent;
+    border: 1px solid #303b55;
+    color: #9ca7bd;
+    padding: 8px;
+    border-radius: 8px;
+    cursor: pointer;
 }
 
-.typing {
-    opacity: 0.7;
-    font-style: italic;
-}
+@media(max-width:700px) {
 
-@media (max-width: 600px) {
+    .sidebar {
+        display: none;
+    }
 
     #chat {
         padding: 15px;
@@ -172,10 +222,6 @@ button:hover {
 
     .message {
         max-width: 90%;
-    }
-
-    header {
-        padding: 0 20px;
     }
 
     .welcome h1 {
@@ -190,37 +236,72 @@ button:hover {
 
 <body>
 
-<header>
+<div class="sidebar">
+
     <div class="logo">
-        ⚡ <span>RAIZEN</span> AI
+        ⚡ <span>RAIZEN</span>
     </div>
-</header>
 
+    <button class="new-chat" onclick="newChat()">
+        + New Chat
+    </button>
 
-<div id="chat">
-
-    <div class="welcome" id="welcome">
-        <h1>Welcome to RAIZEN ⚡</h1>
-        <p>Your Advanced AI Assistant</p>
+    <div class="history-title">
+        CONVERSATION
     </div>
+
+    <div class="history" id="history">
+        Current Chat
+    </div>
+
+    <button class="clear" onclick="clearChat()">
+        Clear Chat
+    </button>
 
 </div>
 
 
-<div class="input-area">
+<div class="main">
 
-    <div class="input-box">
+    <div class="header">
+        RAIZEN AI 2.0
+    </div>
 
-        <input
-            id="message"
-            type="text"
-            placeholder="Ask RAIZEN anything..."
-            onkeydown="handleKey(event)"
-        >
 
-        <button onclick="sendMessage()">
-            Send
-        </button>
+    <div id="chat">
+
+        <div class="welcome" id="welcome">
+
+            <h1>Welcome to RAIZEN ⚡</h1>
+
+            <p>
+                Your Advanced AI Assistant
+            </p>
+
+        </div>
+
+    </div>
+
+
+    <div class="input-area">
+
+        <div class="input-box">
+
+            <input
+                id="message"
+                type="text"
+                placeholder="Ask RAIZEN anything..."
+                onkeydown="handleKey(event)"
+            >
+
+            <button
+                class="send"
+                onclick="sendMessage()"
+            >
+                Send
+            </button>
+
+        </div>
 
     </div>
 
@@ -229,82 +310,142 @@ button:hover {
 
 <script>
 
-const chat = document.getElementById("chat");
+let conversation = [];
 
 
-function handleKey(event) {
+/* LOAD SAVED CHAT */
 
-    if (event.key === "Enter") {
-        sendMessage();
+window.onload = function() {
+
+    const saved =
+        localStorage.getItem("raizen_chat");
+
+    if (saved) {
+
+        conversation =
+            JSON.parse(saved);
+
+        conversation.forEach(item => {
+
+            addMessage(
+                item.text,
+                item.type,
+                false
+            );
+
+        });
+
     }
 
-}
+};
 
 
-function addMessage(text, type) {
+/* ADD MESSAGE */
 
-    const welcome = document.getElementById("welcome");
+function addMessage(text, type, save = true) {
+
+    const welcome =
+        document.getElementById("welcome");
 
     if (welcome) {
         welcome.remove();
     }
 
-    const message = document.createElement("div");
+    const message =
+        document.createElement("div");
 
-    message.className = "message " + type;
+    message.className =
+        "message " + type;
 
     message.textContent = text;
 
-    chat.appendChild(message);
+    document
+        .getElementById("chat")
+        .appendChild(message);
 
-    chat.scrollTop = chat.scrollHeight;
+    document
+        .getElementById("chat")
+        .scrollTop =
+        document
+        .getElementById("chat")
+        .scrollHeight;
+
+
+    if (save) {
+
+        conversation.push({
+            text: text,
+            type: type
+        });
+
+        localStorage.setItem(
+            "raizen_chat",
+            JSON.stringify(conversation)
+        );
+
+    }
 
     return message;
 }
 
 
+/* SEND */
+
 async function sendMessage() {
 
-    const input = document.getElementById("message");
+    const input =
+        document.getElementById("message");
 
-    const text = input.value.trim();
+    const text =
+        input.value.trim();
 
     if (!text) {
         return;
     }
 
 
-    addMessage(text, "user");
+    addMessage(
+        text,
+        "user"
+    );
 
     input.value = "";
 
     input.disabled = true;
 
 
-    const typing = addMessage(
-        "⚡ RAIZEN is thinking...",
-        "ai typing"
-    );
+    const typing =
+        addMessage(
+            "⚡ RAIZEN is thinking...",
+            "ai"
+        );
 
 
     try {
 
-        const result = await fetch("/chat", {
+        const result =
+            await fetch("/chat", {
 
-            method: "POST",
+                method: "POST",
 
-            headers: {
-                "Content-Type": "application/json"
-            },
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
 
-            body: JSON.stringify({
-                message: text
-            })
+                body: JSON.stringify({
 
-        });
+                    message: text,
+
+                    history: conversation
+
+                })
+
+            });
 
 
-        const data = await result.json();
+        const data =
+            await result.json();
 
 
         typing.remove();
@@ -313,17 +454,17 @@ async function sendMessage() {
         if (data.reply) {
 
             addMessage(
-                "⚡ RAIZEN: " + data.reply,
+                "⚡ RAIZEN: " +
+                data.reply,
                 "ai"
             );
 
-        }
-
-        else {
+        } else {
 
             addMessage(
                 "⚠️ Error: " +
-                (data.detail || "Unknown error"),
+                (data.detail ||
+                "Unknown error"),
                 "ai"
             );
 
@@ -350,8 +491,59 @@ async function sendMessage() {
 }
 
 
-</script>
+/* ENTER */
 
+function handleKey(event) {
+
+    if (event.key === "Enter") {
+
+        sendMessage();
+
+    }
+
+}
+
+
+/* NEW CHAT */
+
+function newChat() {
+
+    conversation = [];
+
+    localStorage.removeItem(
+        "raizen_chat"
+    );
+
+    document.getElementById(
+        "chat"
+    ).innerHTML = `
+
+        <div class="welcome" id="welcome">
+
+            <h1>
+                Welcome to RAIZEN ⚡
+            </h1>
+
+            <p>
+                Your Advanced AI Assistant
+            </p>
+
+        </div>
+
+    `;
+
+}
+
+
+/* CLEAR */
+
+function clearChat() {
+
+    newChat();
+
+}
+
+</script>
 
 </body>
 </html>
@@ -362,32 +554,73 @@ async function sendMessage() {
 def chat_ai(request: ChatRequest):
 
     if not HF_TOKEN:
+
         raise HTTPException(
             status_code=500,
             detail="HF_TOKEN is not configured."
         )
 
+
     try:
+
+        messages = [
+
+            {
+                "role": "system",
+                "content": (
+                    "You are RAIZEN, an advanced "
+                    "futuristic AI assistant. "
+                    "You are intelligent, helpful, "
+                    "friendly and confident. "
+                    "Give clear and useful answers."
+                )
+            }
+
+        ]
+
+
+        # ADD PREVIOUS CONVERSATION
+
+        for item in request.history[-10:]:
+
+            if item.get("type") == "user":
+
+                messages.append({
+                    "role": "user",
+                    "content": item.get("text", "")
+                })
+
+            elif item.get("type") == "ai":
+
+                text = item.get("text", "")
+
+                if text.startswith("⚡ RAIZEN: "):
+
+                    text = text.replace(
+                        "⚡ RAIZEN: ",
+                        "",
+                        1
+                    )
+
+                messages.append({
+                    "role": "assistant",
+                    "content": text
+                })
+
+
+        messages.append({
+
+            "role": "user",
+            "content": request.message
+
+        })
+
 
         response = client.chat.completions.create(
 
             model="zai-org/GLM-5.3-Flash",
 
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are RAIZEN, an advanced futuristic AI assistant. "
-                        "You are intelligent, helpful, friendly and confident. "
-                        "Give clear and useful answers. "
-                        "Your name is RAIZEN."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": request.message
-                }
-            ],
+            messages=messages,
 
             max_tokens=500
 
@@ -395,15 +628,22 @@ def chat_ai(request: ChatRequest):
 
 
         return {
-            "reply": response.choices[0].message.content
+
+            "reply":
+                response.choices[0]
+                .message.content
+
         }
 
 
     except Exception as e:
 
         raise HTTPException(
+
             status_code=500,
+
             detail=str(e)
+
         )
 
 
@@ -411,6 +651,11 @@ def chat_ai(request: ChatRequest):
 def health():
 
     return {
-        "status": "RAIZEN AI is online",
-        "token_loaded": bool(HF_TOKEN)
+
+        "status":
+            "RAIZEN AI 2.0 is online",
+
+        "token_loaded":
+            bool(HF_TOKEN)
+
     }
