@@ -6,4 +6,7 @@
 fastapi
 uvicorn[standard]
 huggingface_hub
+pypdf
+python-docx
+python-multipart
 
