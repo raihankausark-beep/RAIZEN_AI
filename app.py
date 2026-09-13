@@ -808,6 +808,8 @@ document.getElementById("fileInput").addEventListener("change", async function()
 
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("question", question);
+    
     document.getElementById("fileName").textContent = "Reading " + file.name + "...";
 
     try {
