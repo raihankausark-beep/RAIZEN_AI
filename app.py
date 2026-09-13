@@ -12,7 +12,7 @@ from huggingface_hub import InferenceClient
 
 
 # =========================================================
-# RAIZEN CONFIGURATION
+# RAIZEN
 # =========================================================
 
 app = FastAPI()
@@ -28,7 +28,7 @@ client = InferenceClient(
 
 
 # =========================================================
-# REQUEST MODEL
+# REQUEST
 # =========================================================
 
 class ChatRequest(BaseModel):
@@ -43,22 +43,17 @@ class ChatRequest(BaseModel):
 # =========================================================
 
 PERSONALITIES = {
-
     "Friendly":
-        "Be friendly, warm, natural and helpful. "
-        "You can use casual language when appropriate.",
+        "Be friendly, warm, natural and helpful.",
 
     "Teacher":
-        "Explain concepts like a good teacher. "
-        "Use simple examples and clear step-by-step explanations.",
+        "Explain things like a good teacher using simple examples.",
 
     "Coding Assistant":
-        "Focus on programming and technical accuracy. "
-        "Give clean code and explain important parts simply.",
+        "Focus on programming and technical accuracy.",
 
     "Professional":
-        "Be professional, precise and structured. "
-        "Avoid unnecessary casual language."
+        "Be professional, precise and well structured."
 }
 
 
@@ -67,20 +62,19 @@ PERSONALITIES = {
 # =========================================================
 
 STYLES = {
-
     "Short":
-        "Keep the answer concise and direct.",
+        "Keep answers concise and direct.",
 
     "Balanced":
-        "Give a clear answer with enough explanation but avoid unnecessary length.",
+        "Give a clear answer with enough explanation.",
 
     "Detailed":
-        "Give a detailed and well-structured answer with useful explanations."
+        "Give detailed and well-structured explanations."
 }
 
 
 # =========================================================
-# HTTP HELPER
+# URL FETCH
 # =========================================================
 
 def fetch_url(url, timeout=10):
@@ -88,8 +82,7 @@ def fetch_url(url, timeout=10):
     request = Request(
         url,
         headers={
-            "User-Agent":
-                "Mozilla/5.0 RAIZEN-AI"
+            "User-Agent": "Mozilla/5.0 RAIZEN-AI"
         }
     )
 
@@ -105,7 +98,7 @@ def fetch_url(url, timeout=10):
 
 
 # =========================================================
-# DETECT LIVE SEARCH
+# LIVE SEARCH DETECTION
 # =========================================================
 
 def needs_live_search(message):
@@ -135,7 +128,7 @@ def needs_live_search(message):
 
 
 # =========================================================
-# DETECT WEATHER
+# WEATHER QUERY
 # =========================================================
 
 def is_weather_query(message):
@@ -153,7 +146,7 @@ def is_weather_query(message):
 
 
 # =========================================================
-# EXTRACT CITY
+# CITY EXTRACTION
 # =========================================================
 
 def extract_city(message):
@@ -196,6 +189,7 @@ def extract_city(message):
 
 # =========================================================
 # OPEN-METEO WEATHER
+# EXACT CITY MATCH FIX
 # =========================================================
 
 def weather_open_meteo(city):
@@ -205,7 +199,7 @@ def weather_open_meteo(city):
         geo_url = (
             "https://geocoding-api.open-meteo.com/v1/search"
             f"?name={quote(city)}"
-            "&count=1"
+            "&count=10"
             "&language=en"
             "&format=json"
         )
@@ -222,7 +216,63 @@ def weather_open_meteo(city):
         if not results:
             return None
 
-        location = results[0]
+
+        # -------------------------------------------------
+        # FIND BEST LOCATION
+        # Exact city name gets highest priority
+        # -------------------------------------------------
+
+        city_clean = city.strip().lower()
+
+        exact_match = None
+
+        for location in results:
+
+            name = location.get(
+                "name",
+                ""
+            ).strip().lower()
+
+            if name == city_clean:
+
+                exact_match = location
+                break
+
+
+        if exact_match:
+
+            location = exact_match
+
+        else:
+
+            # Prefer a result whose name starts
+            # with the requested city
+
+            starts_match = None
+
+            for item in results:
+
+                name = item.get(
+                    "name",
+                    ""
+                ).strip().lower()
+
+                if name.startswith(
+                    city_clean
+                ):
+
+                    starts_match = item
+                    break
+
+
+            if starts_match:
+
+                location = starts_match
+
+            else:
+
+                location = results[0]
+
 
         latitude = location["latitude"]
         longitude = location["longitude"]
@@ -236,6 +286,11 @@ def weather_open_meteo(city):
             "country",
             ""
         )
+
+
+        # -------------------------------------------------
+        # WEATHER DATA
+        # -------------------------------------------------
 
         weather_url = (
             "https://api.open-meteo.com/v1/forecast"
@@ -262,27 +317,36 @@ def weather_open_meteo(city):
         if not current:
             return None
 
+
         weather_codes = {
+
             0: "Clear sky",
             1: "Mainly clear",
             2: "Partly cloudy",
             3: "Overcast",
+
             45: "Fog",
             48: "Depositing rime fog",
+
             51: "Light drizzle",
             53: "Moderate drizzle",
             55: "Dense drizzle",
+
             61: "Slight rain",
             63: "Moderate rain",
             65: "Heavy rain",
+
             71: "Slight snow",
             73: "Moderate snow",
             75: "Heavy snow",
+
             80: "Rain showers",
             81: "Moderate rain showers",
             82: "Violent rain showers",
+
             95: "Thunderstorm"
         }
+
 
         weather_code = current.get(
             "weather_code"
@@ -293,26 +357,50 @@ def weather_open_meteo(city):
             "Unknown conditions"
         )
 
+
         return {
+
             "city": city_name,
+
             "country": country,
+
             "temperature":
-                current.get("temperature_2m"),
+                current.get(
+                    "temperature_2m"
+                ),
+
             "feels_like":
-                current.get("apparent_temperature"),
+                current.get(
+                    "apparent_temperature"
+                ),
+
             "humidity":
-                current.get("relative_humidity_2m"),
+                current.get(
+                    "relative_humidity_2m"
+                ),
+
             "rain":
-                current.get("precipitation"),
+                current.get(
+                    "precipitation"
+                ),
+
             "wind":
-                current.get("wind_speed_10m"),
+                current.get(
+                    "wind_speed_10m"
+                ),
+
             "condition":
                 condition,
+
             "time":
-                current.get("time"),
+                current.get(
+                    "time"
+                ),
+
             "source":
                 "Open-Meteo"
         }
+
 
     except Exception:
 
@@ -320,7 +408,7 @@ def weather_open_meteo(city):
 
 
 # =========================================================
-# WTTR.IN WEATHER FALLBACK
+# WTTR FALLBACK
 # =========================================================
 
 def weather_wttr(city):
@@ -346,65 +434,106 @@ def weather_wttr(city):
 
         current = current_list[0]
 
-        weather_description = current.get(
+
+        description = current.get(
             "weatherDesc",
             [{}]
         )
 
+
         condition = (
-            weather_description[0].get(
+            description[0].get(
                 "value",
                 "Unknown"
             )
-            if weather_description
+            if description
             else "Unknown"
         )
+
 
         area = data.get(
             "nearest_area",
             [{}]
         )
 
-        area_name = "Unknown"
+
+        area_name = city
+
+        country_name = ""
+
 
         if area:
 
             area_name = (
                 area[0]
-                .get("areaName", [{}])[0]
-                .get("value", city)
+                .get(
+                    "areaName",
+                    [{}]
+                )[0]
+                .get(
+                    "value",
+                    city
+                )
             )
-
-        country_name = ""
-
-        if area:
 
             country_name = (
                 area[0]
-                .get("country", [{}])[0]
-                .get("value", "")
+                .get(
+                    "country",
+                    [{}]
+                )[0]
+                .get(
+                    "value",
+                    ""
+                )
             )
 
+
         return {
-            "city": area_name,
-            "country": country_name,
+
+            "city":
+                area_name,
+
+            "country":
+                country_name,
+
             "temperature":
-                current.get("temp_C"),
+                current.get(
+                    "temp_C"
+                ),
+
             "feels_like":
-                current.get("FeelsLikeC"),
+                current.get(
+                    "FeelsLikeC"
+                ),
+
             "humidity":
-                current.get("humidity"),
+                current.get(
+                    "humidity"
+                ),
+
             "rain":
-                current.get("precipMM"),
+                current.get(
+                    "precipMM"
+                ),
+
             "wind":
-                current.get("windspeedKmph"),
+                current.get(
+                    "windspeedKmph"
+                ),
+
             "condition":
                 condition,
+
             "time":
-                current.get("observation_time"),
+                current.get(
+                    "observation_time"
+                ),
+
             "source":
                 "wttr.in"
         }
+
 
     except Exception:
 
@@ -417,21 +546,27 @@ def weather_wttr(city):
 
 def weather_search(city):
 
-    result = weather_open_meteo(city)
+    result = weather_open_meteo(
+        city
+    )
 
     if result:
         return result
 
-    result = weather_wttr(city)
+
+    result = weather_wttr(
+        city
+    )
 
     if result:
         return result
+
 
     return None
 
 
 # =========================================================
-# GOOGLE NEWS SEARCH
+# GOOGLE NEWS
 # =========================================================
 
 def google_news_search(query):
@@ -456,6 +591,7 @@ def google_news_search(query):
 
         results = []
 
+
         for item in root.findall(
             ".//item"
         )[:5]:
@@ -475,6 +611,7 @@ def google_news_search(query):
                 ""
             )
 
+
             if title:
 
                 results.append(
@@ -483,7 +620,9 @@ def google_news_search(query):
                     f"Source: {link}"
                 )
 
+
         return results
+
 
     except Exception:
 
@@ -491,7 +630,7 @@ def google_news_search(query):
 
 
 # =========================================================
-# WIKIPEDIA SEARCH
+# WIKIPEDIA
 # =========================================================
 
 def wikipedia_search(query):
@@ -500,7 +639,8 @@ def wikipedia_search(query):
 
         url = (
             "https://en.wikipedia.org/w/api.php?"
-            f"action=query&list=search"
+            "action=query"
+            "&list=search"
             f"&srsearch={quote(query)}"
             "&format=json"
             "&utf8=1"
@@ -511,11 +651,13 @@ def wikipedia_search(query):
         )
 
         search_results = (
-            data.get("query", {})
+            data
+            .get("query", {})
             .get("search", [])
         )
 
         results = []
+
 
         for item in search_results[:3]:
 
@@ -533,13 +675,16 @@ def wikipedia_search(query):
                 )
             )
 
+
             if title:
 
                 results.append(
                     f"{title}: {snippet}"
                 )
 
+
         return results
+
 
     except Exception:
 
@@ -552,19 +697,27 @@ def wikipedia_search(query):
 
 def live_search(message):
 
-    if is_weather_query(message):
+    if is_weather_query(
+        message
+    ):
 
-        city = extract_city(message)
+        city = extract_city(
+            message
+        )
+
 
         if not city:
+
             return [
                 "WEATHER_ERROR: "
                 "A city name is required."
             ]
 
+
         weather = weather_search(
             city
         )
+
 
         if not weather:
 
@@ -573,34 +726,47 @@ def live_search(message):
                 "Live weather data could not be retrieved."
             ]
 
+
         weather_text = (
+
             "LIVE WEATHER:\n"
-            f"Location: {weather['city']}, "
+
+            f"Location: "
+            f"{weather['city']}, "
             f"{weather['country']}\n"
+
             f"Temperature: "
             f"{weather['temperature']}°C\n"
+
             f"Feels like: "
             f"{weather['feels_like']}°C\n"
+
             f"Condition: "
             f"{weather['condition']}\n"
+
             f"Humidity: "
             f"{weather['humidity']}%\n"
+
             f"Rain: "
             f"{weather['rain']} mm\n"
+
             f"Wind: "
             f"{weather['wind']} km/h\n"
+
             f"Updated: "
             f"{weather['time']}\n"
+
             f"Source: "
             f"{weather['source']}"
         )
+
 
         return [
             weather_text
         ]
 
 
-    # NEWS SEARCH
+    # NEWS
 
     results = google_news_search(
         message
@@ -627,7 +793,7 @@ def live_search(message):
 
 
 # =========================================================
-# MAIN CHAT ENDPOINT
+# CHAT
 # =========================================================
 
 @app.post("/chat")
@@ -650,7 +816,7 @@ def chat(request: ChatRequest):
 
 
     # =====================================================
-    # DIRECT WEATHER RESPONSE
+    # DIRECT WEATHER
     # =====================================================
 
     if is_weather_query(
@@ -661,6 +827,7 @@ def chat(request: ChatRequest):
             message_text
         )
 
+
         if not city:
 
             return {
@@ -669,56 +836,73 @@ def chat(request: ChatRequest):
                     "Example: weather in Cuttack"
             }
 
+
         weather = weather_search(
             city
         )
 
+
         if weather:
 
             reply = (
+
                 "🌦️ **Current Weather**\n\n"
+
                 f"📍 Location: "
                 f"{weather['city']}, "
                 f"{weather['country']}\n\n"
+
                 f"🌡️ Temperature: "
                 f"{weather['temperature']}°C\n"
+
                 f"🥵 Feels like: "
                 f"{weather['feels_like']}°C\n"
+
                 f"☁️ Condition: "
                 f"{weather['condition']}\n"
+
                 f"💧 Humidity: "
                 f"{weather['humidity']}%\n"
+
                 f"🌧️ Rain: "
                 f"{weather['rain']} mm\n"
+
                 f"💨 Wind: "
                 f"{weather['wind']} km/h\n\n"
+
                 f"🕒 Updated: "
                 f"{weather['time']}\n"
+
                 f"📡 Source: "
                 f"{weather['source']}"
             )
+
 
             return {
                 "reply": reply
             }
 
+
         return {
+
             "reply": (
                 "🌦️ Sorry bhai, I couldn't retrieve "
                 f"live weather data for {city} right now.\n\n"
                 "Please try again shortly."
             )
+
         }
 
 
     # =====================================================
-    # PERSONALITY + STYLE
+    # PERSONALITY
     # =====================================================
 
     personality = PERSONALITIES.get(
         request.personality,
         PERSONALITIES["Friendly"]
     )
+
 
     response_style = STYLES.get(
         request.response_style,
@@ -732,6 +916,7 @@ def chat(request: ChatRequest):
 
     live_context = ""
 
+
     if needs_live_search(
         message_text
     ):
@@ -739,6 +924,7 @@ def chat(request: ChatRequest):
         results = live_search(
             message_text
         )
+
 
         if results:
 
@@ -749,6 +935,7 @@ def chat(request: ChatRequest):
                 "answering. Do not invent "
                 "information.\n"
             )
+
 
             for index, result in enumerate(
                 results,
@@ -766,6 +953,7 @@ def chat(request: ChatRequest):
     # =====================================================
 
     system_prompt = f"""
+
 You are RAIZEN, an advanced futuristic AI assistant.
 
 You were created and developed by Raihan Kausar.
@@ -791,25 +979,27 @@ Rules:
 - Keep answers natural and easy to understand.
 - If LIVE_SEARCH_ERROR appears, clearly tell the user
   that live search could not retrieve data.
-- If WEATHER_ERROR appears, clearly explain that weather
-  data could not be retrieved or that a city name is required.
+- If WEATHER_ERROR appears, explain that weather data
+  could not be retrieved or a city name is required.
 - Do not treat an error message as real-world information.
-- When live information is available, mention that the
-  information is live/current.
+- When live information is available, mention that it
+  is live/current.
 
 {live_context}
 """
 
 
     # =====================================================
-    # MESSAGE HISTORY
+    # HISTORY
     # =====================================================
 
     messages = [
+
         {
             "role": "system",
             "content": system_prompt
         }
+
     ]
 
 
@@ -825,6 +1015,7 @@ Rules:
             ""
         )
 
+
         if (
             role in [
                 "user",
@@ -833,25 +1024,33 @@ Rules:
             and content
         ):
 
-            messages.append(
-                {
-                    "role": role,
-                    "content": content
-                }
-            )
+            messages.append({
+
+                "role": role,
+
+                "content": content
+
+            })
 
 
     # =====================================================
-    # AI RESPONSE
+    # AI
     # =====================================================
 
     try:
 
         response = (
-            client.chat.completions.create(
+            client
+            .chat
+            .completions
+            .create(
+
                 model=MODEL,
+
                 messages=messages,
+
                 max_tokens=500
+
             )
         )
 
@@ -889,19 +1088,32 @@ Rules:
 
 
 # =========================================================
-# HEALTH CHECK
+# HEALTH
 # =========================================================
 
 @app.get("/health")
 def health():
 
     return {
-        "status": "RAIZEN online",
-        "token_loaded": bool(HF_TOKEN),
-        "model": MODEL,
-        "provider": "novita",
-        "live_search": True,
-        "weather": True
+
+        "status":
+            "RAIZEN online",
+
+        "token_loaded":
+            bool(HF_TOKEN),
+
+        "model":
+            MODEL,
+
+        "provider":
+            "novita",
+
+        "live_search":
+            True,
+
+        "weather":
+            True
+
     }
 
 
@@ -1265,6 +1477,7 @@ Clear Chat
     placeholder="Ask RAIZEN anything..."
     autocomplete="off">
 
+
 <button
     id="sendButton"
     class="send"
@@ -1281,7 +1494,6 @@ Send
 
 
 <script>
-
 
 let history =
     JSON.parse(
@@ -1384,12 +1596,13 @@ async function sendMessage() {
     );
 
 
-    history.push(
-        {
-            role: "user",
-            content: text
-        }
-    );
+    history.push({
+
+        role: "user",
+
+        content: text
+
+    });
 
 
     localStorage.setItem(
@@ -1415,6 +1628,7 @@ async function sendMessage() {
             await fetch(
                 "/chat",
                 {
+
                     method: "POST",
 
                     headers: {
@@ -1425,7 +1639,8 @@ async function sendMessage() {
                     body:
                         JSON.stringify({
 
-                            message: text,
+                            message:
+                                text,
 
                             history:
                                 history.slice(
@@ -1434,18 +1649,20 @@ async function sendMessage() {
 
                             personality:
                                 document
-                                    .getElementById(
-                                        "personality"
-                                    )
-                                    .value,
+                                .getElementById(
+                                    "personality"
+                                )
+                                .value,
 
                             response_style:
                                 document
-                                    .getElementById(
-                                        "style"
-                                    )
-                                    .value
+                                .getElementById(
+                                    "style"
+                                )
+                                .value
+
                         })
+
                 }
             );
 
@@ -1480,12 +1697,13 @@ async function sendMessage() {
         );
 
 
-        history.push(
-            {
-                role: "assistant",
-                content: reply
-            }
-        );
+        history.push({
+
+            role: "assistant",
+
+            content: reply
+
+        });
 
 
         localStorage.setItem(
@@ -1514,12 +1732,13 @@ async function sendMessage() {
         );
 
 
-        history.push(
-            {
-                role: "assistant",
-                content: errorMessage
-            }
-        );
+        history.push({
+
+            role: "assistant",
+
+            content: errorMessage
+
+        });
 
 
         localStorage.setItem(
@@ -1572,7 +1791,6 @@ input.addEventListener(
     }
 );
 
-
 </script>
 
 
@@ -1583,7 +1801,7 @@ input.addEventListener(
 
 
 # =========================================================
-# HOME PAGE
+# HOME
 # =========================================================
 
 @app.get(
