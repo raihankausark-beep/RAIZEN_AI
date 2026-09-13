@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
 
+
 app = FastAPI()
 
 HF_TOKEN = os.getenv("HF_TOKEN")
@@ -34,6 +35,7 @@ PERSONALITIES = {
     "Coding Assistant": "Act like an expert coding assistant. Give accurate and practical programming help.",
     "Professional": "Use a professional, polished and formal communication style."
 }
+
 
 STYLES = {
     "Short": "Keep answers concise and direct.",
@@ -87,11 +89,24 @@ def google_news_search(query):
     results = []
 
     for item in root.findall(".//item")[:6]:
-        title = item.findtext("title", "").strip()
-        link = item.findtext("link", "").strip()
-        published = item.findtext("pubDate", "").strip()
+
+        title = item.findtext(
+            "title",
+            ""
+        ).strip()
+
+        link = item.findtext(
+            "link",
+            ""
+        ).strip()
+
+        published = item.findtext(
+            "pubDate",
+            ""
+        ).strip()
 
         if title and link:
+
             results.append({
                 "title": title,
                 "link": link,
@@ -117,28 +132,48 @@ def wikipedia_search(query):
     )
 
     with urlopen(request, timeout=15) as response:
+
         data = json.loads(
             response.read().decode("utf-8")
         )
 
     results = []
 
-    for item in data.get("query", {}).get("search", [])[:5]:
-        title = item.get("title", "")
+    for item in data.get(
+        "query",
+        {}
+    ).get(
+        "search",
+        []
+    )[:5]:
+
+        title = item.get(
+            "title",
+            ""
+        )
 
         snippet = re.sub(
             r"<.*?>",
             "",
-            item.get("snippet", "")
+            item.get(
+                "snippet",
+                ""
+            )
         )
 
         if title:
+
             results.append({
                 "title": title,
                 "snippet": snippet,
                 "link": (
                     "https://en.wikipedia.org/wiki/"
-                    + quote(title.replace(" ", "_"))
+                    + quote(
+                        title.replace(
+                            " ",
+                            "_"
+                        )
+                    )
                 )
             })
 
@@ -146,6 +181,7 @@ def wikipedia_search(query):
 
 
 def weather_search(city):
+
     geo_url = (
         "https://geocoding-api.open-meteo.com/v1/search"
         "?name="
@@ -160,12 +196,19 @@ def weather_search(city):
         }
     )
 
-    with urlopen(geo_request, timeout=15) as response:
+    with urlopen(
+        geo_request,
+        timeout=15
+    ) as response:
+
         geo_data = json.loads(
             response.read().decode("utf-8")
         )
 
-    locations = geo_data.get("results", [])
+    locations = geo_data.get(
+        "results",
+        []
+    )
 
     if not locations:
         return []
@@ -198,29 +241,55 @@ def weather_search(city):
         }
     )
 
-    with urlopen(weather_request, timeout=15) as response:
+    with urlopen(
+        weather_request,
+        timeout=15
+    ) as response:
+
         weather_data = json.loads(
             response.read().decode("utf-8")
         )
 
-    current = weather_data.get("current", {})
+    current = weather_data.get(
+        "current",
+        {}
+    )
 
     if not current:
         return []
 
     return [{
-        "city": location.get("name", city),
-        "country": location.get("country", ""),
-        "temperature": current.get("temperature_2m"),
-        "feels_like": current.get("apparent_temperature"),
-        "humidity": current.get("relative_humidity_2m"),
-        "rain": current.get("precipitation"),
-        "wind": current.get("wind_speed_10m"),
-        "time": current.get("time")
+        "city": location.get(
+            "name",
+            city
+        ),
+        "country": location.get(
+            "country",
+            ""
+        ),
+        "temperature": current.get(
+            "temperature_2m"
+        ),
+        "feels_like": current.get(
+            "apparent_temperature"
+        ),
+        "humidity": current.get(
+            "relative_humidity_2m"
+        ),
+        "rain": current.get(
+            "precipitation"
+        ),
+        "wind": current.get(
+            "wind_speed_10m"
+        ),
+        "time": current.get(
+            "time"
+        )
     }]
 
 
 def extract_city(message):
+
     text = message.strip()
 
     patterns = [
@@ -230,6 +299,7 @@ def extract_city(message):
     ]
 
     for pattern in patterns:
+
         match = re.search(
             pattern,
             text,
@@ -237,6 +307,7 @@ def extract_city(message):
         )
 
         if match:
+
             city = match.group(1)
 
             city = re.split(
@@ -245,12 +316,15 @@ def extract_city(message):
                 flags=re.IGNORECASE
             )[0]
 
-            return city.strip(" ?.,!")
+            return city.strip(
+                " ?.,!"
+            )
 
     return None
 
 
 def live_search(query):
+
     text = query.lower()
 
     # WEATHER
@@ -262,17 +336,21 @@ def live_search(query):
             "forecast"
         ]
     ):
+
         city = extract_city(query)
 
         if not city:
+
             return [
                 "WEATHER_ERROR: Please specify the city name."
             ]
 
         try:
+
             weather = weather_search(city)
 
             if weather:
+
                 item = weather[0]
 
                 return [
@@ -304,6 +382,7 @@ def live_search(query):
             ]
 
         except Exception as error:
+
             return [
                 "WEATHER_ERROR: "
                 + str(error)
@@ -313,12 +392,15 @@ def live_search(query):
     news_error = "Unknown error."
 
     try:
+
         news = google_news_search(query)
 
         if news:
+
             results = []
 
             for item in news:
+
                 results.append(
                     "NEWS: "
                     + item["title"]
@@ -333,18 +415,22 @@ def live_search(query):
         news_error = "No Google News results."
 
     except Exception as error:
+
         news_error = str(error)
 
     # WIKIPEDIA FALLBACK
     wiki_error = "Unknown error."
 
     try:
+
         wiki = wikipedia_search(query)
 
         if wiki:
+
             results = []
 
             for item in wiki:
+
                 results.append(
                     "REFERENCE: "
                     + item["title"]
@@ -359,6 +445,7 @@ def live_search(query):
         wiki_error = "No Wikipedia results."
 
     except Exception as error:
+
         wiki_error = str(error)
 
     return [
@@ -370,7 +457,10 @@ def live_search(query):
     ]
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get(
+    "/",
+    response_class=HTMLResponse
+)
 def home():
 
     return """
@@ -473,6 +563,11 @@ select,
     margin-right: 15%;
 }
 
+.thinking {
+    opacity: 0.7;
+    border: 1px solid #293653;
+}
+
 .search-box {
     max-width: 900px;
     margin: auto;
@@ -504,6 +599,11 @@ textarea {
 
 .send:hover {
     background: #1d4ed8;
+}
+
+.send:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 
 @media (max-width: 600px) {
@@ -597,6 +697,7 @@ Clear Chat
 
 
 <button
+    id="sendButton"
     class="send"
     onclick="sendMessage()">
 
@@ -628,7 +729,8 @@ function saveHistory() {
 
 function displayMessage(
     role,
-    text
+    text,
+    extraClass = ""
 ) {
 
     const chat =
@@ -642,9 +744,13 @@ function displayMessage(
         );
 
     div.className =
-        role === "user"
-        ? "message user"
-        : "message raizen";
+        (
+            role === "user"
+            ? "message user"
+            : "message raizen"
+        )
+        + " "
+        + extraClass;
 
     div.textContent = text;
 
@@ -654,6 +760,8 @@ function displayMessage(
         0,
         document.body.scrollHeight
     );
+
+    return div;
 
 }
 
@@ -707,12 +815,19 @@ async function sendMessage() {
             "message"
         );
 
+    const sendButton =
+        document.getElementById(
+            "sendButton"
+        );
+
     const message =
         input.value.trim();
 
     if (!message) {
         return;
     }
+
+    sendButton.disabled = true;
 
     displayMessage(
         "user",
@@ -728,10 +843,12 @@ async function sendMessage() {
 
     input.value = "";
 
-    displayMessage(
-        "assistant",
-        "⚡ RAIZEN is thinking..."
-    );
+    const thinkingMessage =
+        displayMessage(
+            "assistant",
+            "⚡ RAIZEN is thinking...",
+            "thinking"
+        );
 
     const personality =
         document.getElementById(
@@ -777,16 +894,9 @@ async function sendMessage() {
         const data =
             await response.json();
 
-        const chat =
-            document.getElementById(
-                "chat"
-            );
+        if (thinkingMessage) {
 
-        if (chat.lastChild) {
-
-            chat.removeChild(
-                chat.lastChild
-            );
+            thinkingMessage.remove();
 
         }
 
@@ -816,16 +926,9 @@ async function sendMessage() {
 
     } catch (error) {
 
-        const chat =
-            document.getElementById(
-                "chat"
-            );
+        if (thinkingMessage) {
 
-        if (chat.lastChild) {
-
-            chat.removeChild(
-                chat.lastChild
-            );
+            thinkingMessage.remove();
 
         }
 
@@ -833,6 +936,12 @@ async function sendMessage() {
             "assistant",
             "Connection error. Please try again."
         );
+
+    } finally {
+
+        sendButton.disabled = false;
+
+        input.focus();
 
     }
 
@@ -890,9 +999,13 @@ def chat(request: ChatRequest):
 
     live_context = ""
 
-    if needs_live_search(request.message):
+    if needs_live_search(
+        request.message
+    ):
 
-        results = live_search(request.message)
+        results = live_search(
+            request.message
+        )
 
         if results:
 
