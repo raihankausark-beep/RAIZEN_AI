@@ -1,5 +1,4 @@
 import os
-import json
 import uuid
 
 from fastapi import FastAPI, HTTPException
@@ -12,7 +11,7 @@ app = FastAPI()
 
 HF_TOKEN = os.getenv("HF_TOKEN")
 
-# KEEPING YOUR WORKING AI SETUP
+# YOUR WORKING AI SETUP
 client = InferenceClient(
     provider="novita",
     api_key=HF_TOKEN
@@ -26,18 +25,13 @@ class ChatRequest(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 def home():
-
     return HTMLResponse("""
 <!DOCTYPE html>
-
 <html lang="en">
 
 <head>
-
 <meta charset="UTF-8">
-
-<meta name="viewport"
-      content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <title>RAIZEN</title>
 
@@ -56,20 +50,15 @@ body {
     overflow: hidden;
 }
 
-/* SIDEBAR */
-
 .sidebar {
     position: fixed;
     left: 0;
     top: 0;
     bottom: 0;
     width: 260px;
-
     background: #0d1220;
     border-right: 1px solid #242b3d;
-
     padding: 20px;
-
     display: flex;
     flex-direction: column;
 }
@@ -88,10 +77,8 @@ body {
     border: 1px solid #30394f;
     background: #171e30;
     color: white;
-
     padding: 13px;
     border-radius: 12px;
-
     cursor: pointer;
     font-size: 15px;
 }
@@ -103,7 +90,6 @@ body {
 .sidebar-title {
     color: #7f8aa3;
     font-size: 12px;
-
     margin-top: 28px;
     margin-bottom: 10px;
 }
@@ -117,10 +103,8 @@ body {
     padding: 11px;
     border-radius: 9px;
     margin-bottom: 6px;
-
     color: #cbd3e2;
     cursor: pointer;
-
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -134,65 +118,44 @@ body {
     border: 1px solid #30394f;
     background: transparent;
     color: #9da8bd;
-
     padding: 9px;
     border-radius: 9px;
-
     cursor: pointer;
 }
-
-/* MAIN */
 
 .main {
     margin-left: 260px;
     height: 100vh;
-
     display: flex;
     flex-direction: column;
 }
 
-/* HEADER */
-
 .header {
     height: 68px;
-
     border-bottom: 1px solid #242b3d;
-
     display: flex;
     align-items: center;
-
     padding: 0 25px;
-
     font-size: 21px;
     font-weight: bold;
 }
 
-/* CHAT */
-
 .chat {
     flex: 1;
-
     overflow-y: auto;
-
     padding: 30px;
-
     width: 100%;
     max-width: 1000px;
-
     margin: auto;
 }
 
 .welcome {
     height: 100%;
-
     display: flex;
     flex-direction: column;
-
     align-items: center;
     justify-content: center;
-
     text-align: center;
-
     color: #8e99af;
 }
 
@@ -217,15 +180,10 @@ body {
 
 .message {
     max-width: 78%;
-
     padding: 14px 18px;
-
     border-radius: 17px;
-
     line-height: 1.55;
-
     white-space: pre-wrap;
-
     word-wrap: break-word;
 }
 
@@ -239,68 +197,45 @@ body {
     border-bottom-left-radius: 5px;
 }
 
-/* INPUT */
-
 .input-area {
     border-top: 1px solid #242b3d;
-
     background: #0d1220;
-
     padding: 17px;
 }
 
 .input-box {
     max-width: 1000px;
-
     margin: auto;
-
     display: flex;
-
     background: #171f31;
-
     border: 1px solid #293249;
-
     border-radius: 17px;
-
     padding: 7px;
 }
 
 .input-box input {
     flex: 1;
-
     border: none;
     outline: none;
-
     background: transparent;
-
     color: white;
-
     padding: 13px;
-
     font-size: 16px;
 }
 
 .send-button {
     border: none;
-
     background: #7040d8;
-
     color: white;
-
     border-radius: 12px;
-
     padding: 0 20px;
-
     cursor: pointer;
-
     font-size: 15px;
 }
 
 .send-button:hover {
     background: #8050e8;
 }
-
-/* MOBILE */
 
 @media(max-width: 700px) {
 
@@ -323,18 +258,12 @@ body {
     .welcome h1 {
         font-size: 34px;
     }
-
 }
 
 </style>
-
 </head>
 
-
 <body>
-
-
-<!-- SIDEBAR -->
 
 <div class="sidebar">
 
@@ -342,70 +271,37 @@ body {
         ⚡ <span>RAIZEN</span>
     </div>
 
-    <button
-        class="new-chat"
-        onclick="newChat()">
-
+    <button class="new-chat" onclick="newChat()">
         + New Chat
-
     </button>
-
 
     <div class="sidebar-title">
         CHAT HISTORY
     </div>
 
+    <div id="history" class="history"></div>
 
-    <div
-        id="history"
-        class="history">
-
-    </div>
-
-
-    <button
-        class="clear-button"
-        onclick="clearAll()">
-
+    <button class="clear-button" onclick="clearAll()">
         Clear Current Chat
-
     </button>
 
 </div>
 
 
-<!-- MAIN -->
-
 <div class="main">
 
-
     <div class="header">
-
         ⚡ RAIZEN
-
     </div>
 
+    <div id="chat" class="chat">
 
-    <div
-        id="chat"
-        class="chat">
-
-        <div
-            id="welcome"
-            class="welcome">
-
-            <h1>
-                RAIZEN
-            </h1>
-
-            <p>
-                Your intelligent AI assistant
-            </p>
-
+        <div id="welcome" class="welcome">
+            <h1>RAIZEN</h1>
+            <p>Your intelligent AI assistant</p>
         </div>
 
     </div>
-
 
     <div class="input-area">
 
@@ -421,88 +317,57 @@ body {
             <button
                 class="send-button"
                 onclick="sendMessage()">
-
                 Send
-
             </button>
 
         </div>
 
     </div>
 
-
 </div>
 
 
 <script>
 
-
-/* CURRENT CHAT */
-
 let conversation = [];
+let savedChats = JSON.parse(
+    localStorage.getItem("raizen_chats") || "{}"
+);
 
+let currentChatId = null;
 
-/* CHAT HISTORY */
-
-let savedChats =
-    JSON.parse(
-        localStorage.getItem("raizen_chats") || "{}"
-    );
-
-
-/* SAVE */
 
 function saveChats() {
-
     localStorage.setItem(
         "raizen_chats",
         JSON.stringify(savedChats)
     );
-
 }
 
-
-/* RENDER HISTORY */
 
 function renderHistory() {
 
-    const history =
-        document.getElementById("history");
+    const history = document.getElementById("history");
 
     history.innerHTML = "";
 
+    Object.keys(savedChats).reverse().forEach(function(id) {
 
-    Object.keys(savedChats)
-        .reverse()
-        .forEach(id => {
+        const item = document.createElement("div");
 
-            const item =
-                document.createElement("div");
+        item.className = "chat-item";
 
-            item.className = "chat-item";
+        item.textContent =
+            savedChats[id].title || "New Chat";
 
-            const chat =
-                savedChats[id];
+        item.onclick = function() {
+            loadChat(id);
+        };
 
-            item.textContent =
-                chat.title || "New Chat";
-
-
-            item.onclick = function() {
-
-                loadChat(id);
-
-            };
-
-
-            history.appendChild(item);
-
-        });
-
+        history.appendChild(item);
+    });
 }
 
-
-/* SAVE CURRENT */
 
 function saveCurrentChat() {
 
@@ -510,80 +375,51 @@ function saveCurrentChat() {
         return;
     }
 
+    const firstUser = conversation.find(
+        function(item) {
+            return item.type === "user";
+        }
+    );
 
-    const firstUser =
-        conversation.find(
-            x => x.type === "user"
-        );
-
-
-    const title =
-        firstUser
+    const title = firstUser
         ? firstUser.text.substring(0, 30)
         : "New Chat";
 
-
-    if (!window.currentChatId) {
-
-        window.currentChatId =
-            crypto.randomUUID();
-
+    if (!currentChatId) {
+        currentChatId = crypto.randomUUID();
     }
 
-
-    savedChats[
-        window.currentChatId
-    ] = {
-
+    savedChats[currentChatId] = {
         title: title,
-
         messages: conversation
-
     };
 
-
     saveChats();
-
     renderHistory();
-
 }
 
 
-/* LOAD CHAT */
-
 function loadChat(id) {
 
-    const chat =
-        savedChats[id];
+    const chatData = savedChats[id];
 
-    if (!chat) {
+    if (!chatData) {
         return;
     }
 
+    currentChatId = id;
+    conversation = chatData.messages || [];
 
-    window.currentChatId = id;
-
-    conversation =
-        chat.messages || [];
-
-
-    const chatBox =
-        document.getElementById("chat");
-
+    const chatBox = document.getElementById("chat");
 
     chatBox.innerHTML = "";
 
-
     if (conversation.length === 0) {
-
         showWelcome();
-
         return;
-
     }
 
-
-    conversation.forEach(item => {
+    conversation.forEach(function(item) {
 
         addMessage(
             item.text,
@@ -592,297 +428,178 @@ function loadChat(id) {
         );
 
     });
-
 }
 
-
-/* WELCOME */
 
 function showWelcome() {
 
     document.getElementById("chat").innerHTML = `
-
         <div id="welcome" class="welcome">
-
             <h1>RAIZEN</h1>
-
             <p>Your intelligent AI assistant</p>
-
         </div>
-
     `;
-
 }
 
 
-/* ADD MESSAGE */
+function addMessage(text, type, save = true) {
 
-function addMessage(
-    text,
-    type,
-    save = true
-) {
-
-    const welcome =
-        document.getElementById("welcome");
+    const welcome = document.getElementById("welcome");
 
     if (welcome) {
         welcome.remove();
     }
 
+    const row = document.createElement("div");
 
-    const row =
-        document.createElement("div");
+    row.className = "message-row " + type;
 
-    row.className =
-        "message-row " + type;
+    const message = document.createElement("div");
 
-
-    const message =
-        document.createElement("div");
-
-    message.className =
-        "message";
-
+    message.className = "message";
 
     message.textContent = text;
 
-
     row.appendChild(message);
 
+    document.getElementById("chat").appendChild(row);
 
-    document
-        .getElementById("chat")
-        .appendChild(row);
+    const chatBox = document.getElementById("chat");
 
-
-    const chatBox =
-        document.getElementById("chat");
-
-
-    chatBox.scrollTop =
-        chatBox.scrollHeight;
-
+    chatBox.scrollTop = chatBox.scrollHeight;
 
     if (save) {
 
         conversation.push({
-
             text: text,
-
             type: type
-
         });
 
-
         saveCurrentChat();
-
     }
 
-
     return row;
-
 }
 
 
-/* SEND MESSAGE */
-
 async function sendMessage() {
 
-    const input =
-        document.getElementById("message");
+    const input = document.getElementById("message");
 
-
-    const text =
-        input.value.trim();
-
+    const text = input.value.trim();
 
     if (!text) {
         return;
     }
 
-
-    addMessage(
-        text,
-        "user"
-    );
-
+    addMessage(text, "user");
 
     input.value = "";
 
     input.disabled = true;
 
-
-    const typing =
-        addMessage(
-            "⚡ RAIZEN is thinking...",
-            "ai"
-        );
-
+    const typing = addMessage(
+        "⚡ RAIZEN is thinking...",
+        "ai"
+    );
 
     try {
 
-        const response =
-            await fetch(
-                "/chat",
-                {
+        const response = await fetch("/chat", {
 
-                    method: "POST",
+            method: "POST",
 
-                    headers: {
+            headers: {
+                "Content-Type": "application/json"
+            },
 
-                        "Content-Type":
-                            "application/json"
+            body: JSON.stringify({
+                message: text,
+                history: conversation
+            })
 
-                    },
+        });
 
-                    body: JSON.stringify({
-
-                        message: text,
-
-                        history:
-                            conversation
-
-                    })
-
-                }
-            );
-
-
-        const data =
-            await response.json();
-
+        const data = await response.json();
 
         typing.remove();
-
 
         if (data.reply) {
 
             addMessage(
-
-                "⚡ RAIZEN: " +
-                data.reply,
-
+                "⚡ RAIZEN: " + data.reply,
                 "ai"
-
             );
 
-        }
-
-        else {
+        } else {
 
             addMessage(
-
                 "⚠️ " +
-                (
-                    data.detail ||
-                    "Something went wrong."
-                ),
-
+                (data.detail || "Something went wrong."),
                 "ai"
-
             );
-
         }
 
-    }
-
-    catch (error) {
+    } catch (error) {
 
         typing.remove();
 
-
         addMessage(
-
             "⚠️ Unable to connect to RAIZEN.",
-
             "ai"
-
         );
-
     }
 
-
     input.disabled = false;
-
     input.focus();
-
 }
 
 
-/* ENTER KEY */
+document.getElementById("message").addEventListener(
+    "keydown",
+    function(event) {
 
-document
-    .getElementById("message")
-    .addEventListener(
-        "keydown",
-        function(event) {
-
-            if (
-                event.key === "Enter"
-            ) {
-
-                sendMessage();
-
-            }
-
+        if (event.key === "Enter") {
+            sendMessage();
         }
-    );
 
+    }
+);
 
-/* NEW CHAT */
 
 function newChat() {
 
     conversation = [];
-
-    window.currentChatId =
-        null;
+    currentChatId = null;
 
     showWelcome();
-
 }
 
-
-/* CLEAR CURRENT */
 
 function clearAll() {
 
     conversation = [];
 
+    if (currentChatId) {
 
-    if (window.currentChatId) {
-
-        delete savedChats[
-            window.currentChatId
-        ];
+        delete savedChats[currentChatId];
 
         saveChats();
-
     }
 
-
-    window.currentChatId =
-        null;
-
+    currentChatId = null;
 
     showWelcome();
 
     renderHistory();
-
 }
 
 
-/* START */
-
 renderHistory();
-
 
 </script>
 
-
 </body>
-
 </html>
 """)
 
@@ -891,17 +608,14 @@ renderHistory();
 def chat_ai(request: ChatRequest):
 
     if not HF_TOKEN:
-
         raise HTTPException(
             status_code=500,
             detail="HF_TOKEN is not configured."
         )
 
-
     try:
 
         messages = [
-
             {
                 "role": "system",
                 "content": (
@@ -918,41 +632,28 @@ def chat_ai(request: ChatRequest):
                     "and developed you."
                 )
             }
-
         ]
 
-
-        # ADD CONVERSATION MEMORY
+        # ADD PREVIOUS CONVERSATION
 
         for item in request.history[-12:]:
 
-            role_type =
-                item.get("type")
-
-            text =
-                item.get("text", "")
-
+            role_type = item.get("type")
+            text = item.get("text", "")
 
             if not text:
                 continue
 
-
             if role_type == "user":
 
                 messages.append({
-
                     "role": "user",
-
                     "content": text
-
                 })
-
 
             elif role_type == "ai":
 
-                if text.startswith(
-                    "⚡ RAIZEN: "
-                ):
+                if text.startswith("⚡ RAIZEN: "):
 
                     text = text.replace(
                         "⚡ RAIZEN: ",
@@ -960,69 +661,42 @@ def chat_ai(request: ChatRequest):
                         1
                     )
 
-
                 messages.append({
-
                     "role": "assistant",
-
                     "content": text
-
                 })
 
+        # ADD CURRENT MESSAGE
 
-        # CURRENT MESSAGE
-
-        # Avoid sending the same user message twice
-        # if it is already present in history.
-
-        if not messages or \
-           messages[-1].get("content") != request.message:
+        if (
+            not messages
+            or messages[-1].get("content") != request.message
+        ):
 
             messages.append({
-
                 "role": "user",
-
-                "content":
-                    request.message
-
+                "content": request.message
             })
 
+        # CALL AI
 
-        # AI RESPONSE
+        response = client.chat.completions.create(
+            model="zai-org/GLM-5.3-Flash",
+            messages=messages,
+            max_tokens=500
+        )
 
-        response =
-            client.chat.completions.create(
-
-                model=
-                    "zai-org/GLM-5.3-Flash",
-
-                messages=
-                    messages,
-
-                max_tokens=500
-
-            )
-
-
-        reply =
-            response.choices[0].message.content
-
+        reply = response.choices[0].message.content
 
         return {
-
             "reply": reply
-
         }
-
 
     except Exception as e:
 
         raise HTTPException(
-
             status_code=500,
-
             detail=str(e)
-
         )
 
 
@@ -1030,11 +704,6 @@ def chat_ai(request: ChatRequest):
 def health():
 
     return {
-
-        "status":
-            "RAIZEN is online",
-
-        "token_loaded":
-            bool(HF_TOKEN)
-
+        "status": "RAIZEN is online",
+        "token_loaded": bool(HF_TOKEN)
     }
