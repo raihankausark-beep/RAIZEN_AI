@@ -23,7 +23,7 @@ client = InferenceClient(
     provider="novita",
     api_key=HF_TOKEN
 )
-VISION_MODEL = "Qwen/Qwen2.5-VL-3B-Instruct"
+VISION_MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
 
 vision_client = InferenceClient(
     provider="novita",
