@@ -1,10 +1,13 @@
 import os
+import re
+from html import unescape
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
-from ddgs import DDGS
 
 
 app = FastAPI()
@@ -39,7 +42,7 @@ class ChatRequest(BaseModel):
 # PERSONALITY
 # =========================
 
-personality_prompts = {
+PERSONALITIES = {
     "Friendly": "Be friendly, casual and approachable.",
     "Teacher": "Act like a patient teacher. Explain concepts simply and clearly.",
     "Coding Assistant": "Act like an expert coding assistant. Give accurate and practical programming help.",
@@ -47,7 +50,7 @@ personality_prompts = {
 }
 
 
-style_prompts = {
+STYLES = {
     "Short": "Keep answers concise and direct.",
     "Balanced": "Give a balanced answer with enough explanation but avoid unnecessary length.",
     "Detailed": "Give detailed explanations with useful examples when appropriate."
@@ -55,34 +58,7 @@ style_prompts = {
 
 
 # =========================
-# WEB SEARCH
-# =========================
-
-def web_search(query):
-    try:
-        results = []
-
-        with DDGS() as ddgs:
-            search_results = ddgs.text(
-                query,
-                max_results=5
-            )
-
-            for result in search_results:
-                results.append({
-                    "title": result.get("title", ""),
-                    "body": result.get("body", ""),
-                    "href": result.get("href", "")
-                })
-
-        return results
-
-    except Exception:
-        return []
-
-
-# =========================
-# SEARCH DETECTION
+# WEB SEARCH DETECTION
 # =========================
 
 def needs_web_search(message):
@@ -102,28 +78,93 @@ def needs_web_search(message):
         "this month"
     ]
 
-    message_lower = message.lower()
+    text = message.lower()
 
-    for keyword in keywords:
-        if keyword in message_lower:
-            return True
+    return any(
+        keyword in text
+        for keyword in keywords
+    )
 
-    return False
+
+# =========================
+# WEB SEARCH
+# =========================
+
+def web_search(query):
+    try:
+        url = (
+            "https://html.duckduckgo.com/html/?q="
+            + quote(query)
+        )
+
+        request = Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0"
+            }
+        )
+
+        with urlopen(
+            request,
+            timeout=10
+        ) as response:
+
+            page = response.read().decode(
+                "utf-8",
+                errors="ignore"
+            )
+
+        pattern = re.compile(
+            r'<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
+            re.IGNORECASE | re.DOTALL
+        )
+
+        results = []
+
+        matches = pattern.findall(page)
+
+        for link, title in matches[:5]:
+
+            clean_title = re.sub(
+                r"<.*?>",
+                "",
+                title
+            )
+
+            clean_title = unescape(
+                clean_title
+            ).strip()
+
+            results.append({
+                "title": clean_title,
+                "href": link
+            })
+
+        return results
+
+    except Exception:
+        return []
 
 
 # =========================
 # HOME PAGE
 # =========================
 
-@app.get("/", response_class=HTMLResponse)
+@app.get(
+    "/",
+    response_class=HTMLResponse
+)
 def home():
+
     return """
 <!DOCTYPE html>
+
 <html>
 
 <head>
 
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport"
+      content="width=device-width, initial-scale=1">
 
 <title>RAIZEN</title>
 
@@ -149,11 +190,11 @@ body {
 
 .header h1 {
     margin: 0;
-    font-size: 28px;
+    font-size: 30px;
 }
 
 .header p {
-    margin: 5px 0 0;
+    margin: 6px 0 0;
     color: #8fa3c7;
 }
 
@@ -166,16 +207,18 @@ body {
     background: #0a1020;
 }
 
+select,
+button,
+textarea {
+    font-family: inherit;
+}
+
 select {
     background: #111a2d;
     color: white;
     border: 1px solid #293653;
     padding: 10px;
     border-radius: 8px;
-}
-
-button {
-    font-family: inherit;
 }
 
 .action {
@@ -250,6 +293,24 @@ textarea {
     background: #1d4ed8;
 }
 
+@media (max-width: 600px) {
+
+    .user,
+    .raizen {
+        margin-left: 0;
+        margin-right: 0;
+    }
+
+    .search-box {
+        padding: 10px;
+    }
+
+    .send {
+        padding: 0 15px;
+    }
+
+}
+
 </style>
 
 </head>
@@ -269,11 +330,15 @@ textarea {
 
 <div class="controls">
 
+
 <select id="personality">
 
 <option>Friendly</option>
+
 <option>Teacher</option>
+
 <option>Coding Assistant</option>
+
 <option>Professional</option>
 
 </select>
@@ -282,92 +347,139 @@ textarea {
 <select id="style">
 
 <option>Short</option>
-<option selected>Balanced</option>
+
+<option selected>
+Balanced
+</option>
+
 <option>Detailed</option>
 
 </select>
 
 
-<button class="action" onclick="newChat()">
+<button
+    class="action"
+    onclick="newChat()">
+
 New Chat
+
 </button>
 
 
-<button class="action" onclick="clearChat()">
+<button
+    class="action"
+    onclick="clearChat()">
+
 Clear Chat
+
 </button>
+
 
 </div>
 
 
-<div id="chat" class="chat"></div>
+<div
+    id="chat"
+    class="chat">
+</div>
 
 
 <div class="search-box">
 
-<textarea
-id="message"
-placeholder="Ask RAIZEN anything..."
-onkeydown="handleKey(event)"
-></textarea>
 
-<button class="send" onclick="sendMessage()">
+<textarea
+    id="message"
+    placeholder="Ask RAIZEN anything..."
+    onkeydown="handleKey(event)">
+</textarea>
+
+
+<button
+    class="send"
+    onclick="sendMessage()">
+
 Send
+
 </button>
+
 
 </div>
 
 
 <script>
 
+
 let history = JSON.parse(
-    localStorage.getItem("raizen_history") || "[]"
+    localStorage.getItem(
+        "raizen_history"
+    ) || "[]"
 );
 
 
 function saveHistory() {
+
     localStorage.setItem(
         "raizen_history",
         JSON.stringify(history)
     );
+
 }
 
 
-function displayMessage(role, text) {
+function displayMessage(
+    role,
+    text
+) {
 
-    const chat = document.getElementById("chat");
+    const chat =
+        document.getElementById(
+            "chat"
+        );
 
-    const div = document.createElement("div");
+    const div =
+        document.createElement(
+            "div"
+        );
 
-    if (role === "user") {
-        div.className = "message user";
-    } else {
-        div.className = "message raizen";
-    }
+
+    div.className =
+        role === "user"
+        ? "message user"
+        : "message raizen";
+
 
     div.textContent = text;
 
+
     chat.appendChild(div);
+
 
     window.scrollTo(
         0,
         document.body.scrollHeight
     );
+
 }
 
 
 function loadHistory() {
 
-    document.getElementById("chat").innerHTML = "";
+    document.getElementById(
+        "chat"
+    ).innerHTML = "";
 
-    history.forEach(function(item) {
 
-        displayMessage(
-            item.role,
-            item.content
-        );
+    history.forEach(
+        function(item) {
 
-    });
+            displayMessage(
+                item.role,
+                item.content
+            );
+
+        }
+    );
+
 }
 
 
@@ -378,6 +490,7 @@ function newChat() {
     saveHistory();
 
     loadHistory();
+
 }
 
 
@@ -388,16 +501,21 @@ function clearChat() {
     saveHistory();
 
     loadHistory();
+
 }
 
 
 async function sendMessage() {
 
     const input =
-        document.getElementById("message");
+        document.getElementById(
+            "message"
+        );
+
 
     const message =
         input.value.trim();
+
 
     if (!message) {
         return;
@@ -411,12 +529,16 @@ async function sendMessage() {
 
 
     history.push({
+
         role: "user",
+
         content: message
+
     });
 
 
     saveHistory();
+
 
     input.value = "";
 
@@ -441,32 +563,36 @@ async function sendMessage() {
 
     try {
 
-        const response = await fetch(
-            "/chat",
-            {
-                method: "POST",
+        const response =
+            await fetch(
+                "/chat",
+                {
 
-                headers: {
-                    "Content-Type":
-                        "application/json"
-                },
+                    method: "POST",
 
-                body: JSON.stringify({
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
 
-                    message: message,
+                    body: JSON.stringify({
 
-                    history:
-                        history.slice(-12),
+                        message:
+                            message,
 
-                    personality:
-                        personality,
+                        history:
+                            history.slice(-12),
 
-                    response_style:
-                        responseStyle
+                        personality:
+                            personality,
 
-                })
-            }
-        );
+                        response_style:
+                            responseStyle
+
+                    })
+
+                }
+            );
 
 
         const data =
@@ -474,11 +600,17 @@ async function sendMessage() {
 
 
         const chat =
-            document.getElementById("chat");
+            document.getElementById(
+                "chat"
+            );
 
 
         if (chat.lastChild) {
-            chat.removeChild(chat.lastChild);
+
+            chat.removeChild(
+                chat.lastChild
+            );
+
         }
 
 
@@ -491,6 +623,7 @@ async function sendMessage() {
             );
 
             return;
+
         }
 
 
@@ -501,8 +634,11 @@ async function sendMessage() {
 
 
         history.push({
+
             role: "assistant",
+
             content: data.reply
+
         });
 
 
@@ -512,11 +648,17 @@ async function sendMessage() {
     } catch (error) {
 
         const chat =
-            document.getElementById("chat");
+            document.getElementById(
+                "chat"
+            );
 
 
         if (chat.lastChild) {
-            chat.removeChild(chat.lastChild);
+
+            chat.removeChild(
+                chat.lastChild
+            );
+
         }
 
 
@@ -524,7 +666,9 @@ async function sendMessage() {
             "assistant",
             "Connection error. Please try again."
         );
+
     }
+
 }
 
 
@@ -538,11 +682,14 @@ function handleKey(event) {
         event.preventDefault();
 
         sendMessage();
+
     }
+
 }
 
 
 loadHistory();
+
 
 </script>
 
@@ -561,41 +708,54 @@ loadHistory();
 def chat(request: ChatRequest):
 
     if not HF_TOKEN:
+
         raise HTTPException(
             status_code=500,
-            detail="HF_TOKEN is not configured on the server."
+            detail=(
+                "HF_TOKEN is not configured "
+                "on the server."
+            )
         )
 
 
-    personality = personality_prompts.get(
-        request.personality,
-        personality_prompts["Friendly"]
-    )
+    personality =
+        PERSONALITIES.get(
+            request.personality,
+            PERSONALITIES["Friendly"]
+        )
 
 
-    response_style = style_prompts.get(
-        request.response_style,
-        style_prompts["Balanced"]
-    )
+    response_style =
+        STYLES.get(
+            request.response_style,
+            STYLES["Balanced"]
+        )
 
 
     # =========================
-    # WEB SEARCH
+    # SEARCH
     # =========================
 
     search_context = ""
 
-    if needs_web_search(request.message):
+
+    if needs_web_search(
+        request.message
+    ):
 
         results = web_search(
             request.message
         )
 
+
         if results:
 
             search_context = (
                 "\n\nWEB SEARCH RESULTS:\n"
+                "Use these results as "
+                "supporting information:\n"
             )
+
 
             for index, result in enumerate(
                 results,
@@ -605,8 +765,8 @@ def chat(request: ChatRequest):
                 search_context += (
                     f"\n{index}. "
                     f"{result['title']}\n"
-                    f"{result['body']}\n"
-                    f"Source: {result['href']}\n"
+                    f"Source: "
+                    f"{result['href']}\n"
                 )
 
 
@@ -629,20 +789,20 @@ Personality:
 Response style:
 {response_style}
 
-Important rules:
+Rules:
 
 - Be helpful and accurate.
 - Use conversation history when useful.
-- If web search results are provided, use them
-  to answer current-information questions.
-- Do not pretend you searched the web when
-  no search results were provided.
+- If web search results are provided, use them.
+- Do not claim that you searched the web if no
+  search results were provided.
 - Do not invent facts or sources.
 - Explain things clearly.
 """
 
 
     if search_context:
+
         system_prompt += search_context
 
 
@@ -651,10 +811,12 @@ Important rules:
     # =========================
 
     messages = [
+
         {
             "role": "system",
             "content": system_prompt
         }
+
     ]
 
 
@@ -665,16 +827,24 @@ Important rules:
             "user"
         )
 
+
         content = item.get(
             "content",
             ""
         )
 
-        if role in ["user", "assistant"]:
+
+        if (
+            role in ["user", "assistant"]
+            and content
+        ):
 
             messages.append({
+
                 "role": role,
+
                 "content": content
+
             })
 
 
@@ -684,14 +854,16 @@ Important rules:
 
     try:
 
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=messages,
-            max_tokens=500
-        )
+        response =
+            client.chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                max_tokens=500
+            )
 
 
-        reply = response.choices[0].message.content
+        reply =
+            response.choices[0].message.content
 
 
         return {
@@ -699,11 +871,14 @@ Important rules:
         }
 
 
-    except Exception as e:
+    except Exception as error:
 
         raise HTTPException(
+
             status_code=500,
-            detail=f"AI error: {str(e)}"
+
+            detail=f"AI error: {str(error)}"
+
         )
 
 
@@ -715,8 +890,13 @@ Important rules:
 def health():
 
     return {
+
         "status": "RAIZEN online",
+
         "token_loaded": bool(HF_TOKEN),
+
         "model": MODEL,
+
         "web_search": True
+
     }
