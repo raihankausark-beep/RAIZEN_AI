@@ -1022,7 +1022,8 @@ try {
 @app.get("/", response_class=HTMLResponse)
 async def home():
     return HTMLResponse(content=HTML)
-    @app.post("/vision")
+    
+@app.post("/vision")
 async def vision(
     file: UploadFile = File(...),
     message: str = "Describe this image."
