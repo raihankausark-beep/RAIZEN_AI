@@ -71,8 +71,15 @@ def google_news_search(query):
         for item in root.findall(".//item")[:5]:
             title = item.findtext("title") or ""
             date = item.findtext("pubDate") or ""
+            link = item.findtext("link") or ""
+            source = item.findtext("source") or "Google News"
             if title:
-                results.append({"title": title, "date": date})
+                results.append({
+                    "title": title,
+                    "date": date,
+                    "link": link,
+                    "source": source
+                })
 
         return results
     except Exception as error:
@@ -94,9 +101,12 @@ def wikipedia_search(query):
 
         results = []
         for item in data.get("query", {}).get("search", []):
+            title = item.get("title", "")
             results.append({
-                "title": item.get("title", ""),
-                "snippet": re.sub("<.*?>", "", item.get("snippet", ""))
+                "title": title,
+                "snippet": re.sub("<.*?>", "", item.get("snippet", "")),
+                "link": "https://en.wikipedia.org/wiki/" + quote(title.replace(" ", "_")),
+                "source": "Wikipedia"
             })
 
         return results
@@ -439,7 +449,7 @@ def extract_city(message):
 
 
 def live_search(message):
-    text = message.lower()
+    text = message.lower().strip()
 
     if (
         "weather" in text
@@ -470,8 +480,12 @@ def live_search(message):
                 str(index)
                 + ". "
                 + item["title"]
+                + "\nSource: "
+                + item.get("source", "Google News")
                 + "\nDate: "
-                + item["date"]
+                + item.get("date", "")
+                + "\nLink: "
+                + item.get("link", "")
                 + "\n\n"
             )
         return output
@@ -487,6 +501,10 @@ def live_search(message):
                 + item["title"]
                 + "\n"
                 + item["snippet"]
+                + "\nSource: "
+                + item.get("source", "Wikipedia")
+                + "\nLink: "
+                + item.get("link", "")
                 + "\n\n"
             )
         return output
@@ -618,6 +636,22 @@ select,
     font-size: 12px;
     margin-top: 8px;
 }
+
+.message a {
+    color: #7db2ff;
+    text-decoration: underline;
+    word-break: break-all;
+}
+
+.search-badge {
+    display: inline-block;
+    font-size: 11px;
+    padding: 3px 7px;
+    border: 1px solid #3a4d73;
+    border-radius: 999px;
+    opacity: 0.8;
+    margin-bottom: 5px;
+}
 </style>
 </head>
 
@@ -683,6 +717,27 @@ function saveHistory() {
     );
 }
 
+function escapeHtml(text) {
+    return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function linkify(html) {
+    return html.replace(
+        /(https?:\/\/[^\s<]+)/g,
+        function(url) {
+            const cleanUrl = url.replace(/[.,)]+$/, "");
+            const trailing = url.slice(cleanUrl.length);
+            return '<a href="' + cleanUrl + '" target="_blank" rel="noopener noreferrer">'
+                + cleanUrl + '</a>' + trailing;
+        }
+    );
+}
+
 function displayMessage(role, text, extraClass) {
     const chat = document.getElementById("chat");
     const welcome = document.getElementById("welcome");
@@ -696,7 +751,7 @@ function displayMessage(role, text, extraClass) {
     div.className =
         "message " + role + " " + (extraClass || "");
 
-    div.textContent = text;
+    div.innerHTML = linkify(escapeHtml(text));
 
     chat.appendChild(div);
     chat.scrollTop = chat.scrollHeight;
@@ -921,6 +976,8 @@ Rules:
 - Be accurate and helpful.
 - Do not invent live information.
 - Use live information only when provided.
+- For live news/web results, use the supplied source, date, and link.
+- When a link is supplied, keep it in the answer so the user can open the source.
 - If live search fails, say so clearly.
 - If WEATHER_ERROR appears, explain that live
   weather data could not be retrieved.
