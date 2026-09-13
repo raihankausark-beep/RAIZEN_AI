@@ -2,23 +2,21 @@ import os
 import json
 import re
 from urllib.parse import quote
-from urllib.request import Request, urlopen
-import xml.etree.ElementTree as ET
+from urllib.request import urlopen, Request
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
 
 
-# =========================================================
+# ============================================================
 # RAIZEN
-# =========================================================
+# ============================================================
 
 app = FastAPI()
 
 HF_TOKEN = os.getenv("HF_TOKEN")
-
 MODEL = "zai-org/GLM-5.3-Flash"
 
 client = InferenceClient(
@@ -27,82 +25,64 @@ client = InferenceClient(
 )
 
 
-# =========================================================
-# REQUEST
-# =========================================================
+# ============================================================
+# PERSONALITY / RESPONSE STYLE
+# ============================================================
+
+PERSONALITIES = {
+    "Friendly": (
+        "Be friendly, natural, helpful and easy to talk to. "
+        "Use simple language."
+    ),
+
+    "Teacher": (
+        "Act like a good teacher. Explain concepts clearly "
+        "with simple examples and step-by-step explanations."
+    ),
+
+    "Coding Assistant": (
+        "Focus on programming, debugging and technical accuracy. "
+        "Give practical code and explain important parts."
+    ),
+
+    "Professional": (
+        "Use a professional, clear and structured communication style."
+    )
+}
+
+
+STYLES = {
+    "Short": (
+        "Keep the answer short and direct unless more detail is necessary."
+    ),
+
+    "Balanced": (
+        "Give a balanced answer with enough explanation but avoid unnecessary length."
+    ),
+
+    "Detailed": (
+        "Give a detailed explanation with useful examples and steps."
+    )
+}
+
+
+# ============================================================
+# REQUEST MODEL
+# ============================================================
 
 class ChatRequest(BaseModel):
     message: str
     history: list = []
     personality: str = "Friendly"
     response_style: str = "Balanced"
+    custom_instructions: str = ""
 
 
-# =========================================================
-# PERSONALITIES
-# =========================================================
-
-PERSONALITIES = {
-    "Friendly":
-        "Be friendly, warm, natural and helpful.",
-
-    "Teacher":
-        "Explain things like a good teacher using simple examples.",
-
-    "Coding Assistant":
-        "Focus on programming and technical accuracy.",
-
-    "Professional":
-        "Be professional, precise and well structured."
-}
-
-
-# =========================================================
-# RESPONSE STYLES
-# =========================================================
-
-STYLES = {
-    "Short":
-        "Keep answers concise and direct.",
-
-    "Balanced":
-        "Give a clear answer with enough explanation.",
-
-    "Detailed":
-        "Give detailed and well-structured explanations."
-}
-
-
-# =========================================================
-# URL FETCH
-# =========================================================
-
-def fetch_url(url, timeout=10):
-
-    request = Request(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0 RAIZEN-AI"
-        }
-    )
-
-    with urlopen(
-        request,
-        timeout=timeout
-    ) as response:
-
-        return response.read().decode(
-            "utf-8",
-            errors="ignore"
-        )
-
-
-# =========================================================
+# ============================================================
 # LIVE SEARCH DETECTION
-# =========================================================
+# ============================================================
 
 def needs_live_search(message):
-
     text = message.lower()
 
     keywords = [
@@ -114,52 +94,310 @@ def needs_live_search(message):
         "right now",
         "this week",
         "this month",
-        "trending",
         "search",
+        "trending",
         "weather",
         "temperature",
         "forecast"
     ]
 
-    return any(
-        keyword in text
-        for keyword in keywords
-    )
+    return any(word in text for word in keywords)
 
 
-# =========================================================
-# WEATHER QUERY
-# =========================================================
+# ============================================================
+# GOOGLE NEWS SEARCH
+# ============================================================
 
-def is_weather_query(message):
+def google_news_search(query):
 
-    text = message.lower()
+    try:
+        rss_url = (
+            "https://news.google.com/rss/search?"
+            f"q={quote(query)}"
+            "&hl=en-IN"
+            "&gl=IN"
+            "&ceid=IN:en"
+        )
 
-    return any(
-        word in text
-        for word in [
-            "weather",
-            "temperature",
-            "forecast"
-        ]
-    )
+        request = Request(
+            rss_url,
+            headers={
+                "User-Agent": "Mozilla/5.0"
+            }
+        )
+
+        with urlopen(request, timeout=10) as response:
+            data = response.read().decode("utf-8")
+
+        import xml.etree.ElementTree as ET
+
+        root = ET.fromstring(data)
+
+        results = []
+
+        for item in root.findall(".//item")[:5]:
+
+            title = item.findtext("title")
+            link = item.findtext("link")
+            pub_date = item.findtext("pubDate")
+
+            if title:
+                results.append({
+                    "title": title,
+                    "link": link,
+                    "date": pub_date
+                })
+
+        return results
+
+    except Exception:
+        return []
 
 
-# =========================================================
-# CITY EXTRACTION
-# =========================================================
+# ============================================================
+# WIKIPEDIA SEARCH
+# ============================================================
+
+def wikipedia_search(query):
+
+    try:
+
+        url = (
+            "https://en.wikipedia.org/w/api.php?"
+            "action=query"
+            "&format=json"
+            "&list=search"
+            f"&srsearch={quote(query)}"
+            "&srlimit=3"
+        )
+
+        request = Request(
+            url,
+            headers={
+                "User-Agent": "RAIZEN-AI/1.0"
+            }
+        )
+
+        with urlopen(request, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+
+        results = []
+
+        for item in data.get("query", {}).get("search", []):
+
+            results.append({
+                "title": item.get("title"),
+                "snippet": re.sub(
+                    "<.*?>",
+                    "",
+                    item.get("snippet", "")
+                )
+            })
+
+        return results
+
+    except Exception:
+        return []
+
+
+# ============================================================
+# WEATHER - OPEN METEO
+# ============================================================
+
+def weather_open_meteo(city):
+
+    try:
+
+        city = city.strip()
+
+        if not city:
+            return None
+
+        geo_url = (
+            "https://geocoding-api.open-meteo.com/v1/search"
+            f"?name={quote(city)}"
+            "&count=10"
+            "&language=en"
+            "&format=json"
+        )
+
+        request = Request(
+            geo_url,
+            headers={
+                "User-Agent": "RAIZEN-AI/1.0"
+            }
+        )
+
+        with urlopen(request, timeout=10) as response:
+            geo_data = json.loads(
+                response.read().decode("utf-8")
+            )
+
+        locations = geo_data.get("results", [])
+
+        if not locations:
+            return None
+
+        city_clean = city.lower().strip()
+
+        exact_match = None
+
+        for location in locations:
+
+            name = location.get(
+                "name",
+                ""
+            ).strip().lower()
+
+            if name == city_clean:
+                exact_match = location
+                break
+
+        if exact_match:
+            location = exact_match
+
+        else:
+
+            starts_match = None
+
+            for item in locations:
+
+                name = item.get(
+                    "name",
+                    ""
+                ).strip().lower()
+
+                if name.startswith(city_clean):
+                    starts_match = item
+                    break
+
+            location = starts_match or locations[0]
+
+        latitude = location.get("latitude")
+        longitude = location.get("longitude")
+
+        if latitude is None or longitude is None:
+            return None
+
+        weather_url = (
+            "https://api.open-meteo.com/v1/forecast?"
+            f"latitude={latitude}"
+            f"&longitude={longitude}"
+            "&current="
+            "temperature_2m,"
+            "relative_humidity_2m,"
+            "apparent_temperature,"
+            "precipitation,"
+            "wind_speed_10m,"
+            "weather_code"
+            "&timezone=auto"
+        )
+
+        request = Request(
+            weather_url,
+            headers={
+                "User-Agent": "RAIZEN-AI/1.0"
+            }
+        )
+
+        with urlopen(request, timeout=10) as response:
+            weather_data = json.loads(
+                response.read().decode("utf-8")
+            )
+
+        current = weather_data.get("current", {})
+
+        temperature = current.get("temperature_2m")
+        humidity = current.get("relative_humidity_2m")
+        feels_like = current.get("apparent_temperature")
+        precipitation = current.get("precipitation")
+        wind = current.get("wind_speed_10m")
+        weather_code = current.get("weather_code")
+
+        weather_names = {
+            0: "Clear sky",
+            1: "Mainly clear",
+            2: "Partly cloudy",
+            3: "Overcast",
+            45: "Fog",
+            48: "Depositing rime fog",
+            51: "Light drizzle",
+            53: "Moderate drizzle",
+            55: "Dense drizzle",
+            61: "Slight rain",
+            63: "Moderate rain",
+            65: "Heavy rain",
+            71: "Slight snow",
+            73: "Moderate snow",
+            75: "Heavy snow",
+            80: "Slight rain showers",
+            81: "Moderate rain showers",
+            82: "Violent rain showers",
+            95: "Thunderstorm",
+            96: "Thunderstorm with slight hail",
+            99: "Thunderstorm with heavy hail"
+        }
+
+        condition = weather_names.get(
+            weather_code,
+            "Unknown"
+        )
+
+        actual_city = location.get(
+            "name",
+            city
+        )
+
+        country = location.get(
+            "country",
+            ""
+        )
+
+        result = (
+            f"Current weather for {actual_city}, {country}\n\n"
+            f"Condition: {condition}\n"
+            f"Temperature: {temperature}°C\n"
+            f"Feels like: {feels_like}°C\n"
+            f"Humidity: {humidity}%\n"
+            f"Precipitation: {precipitation} mm\n"
+            f"Wind speed: {wind} km/h\n\n"
+            f"Source: Open-Meteo"
+        )
+
+        return result
+
+    except Exception:
+        return None
+
+
+# ============================================================
+# WEATHER SEARCH
+# ============================================================
+
+def weather_search(city):
+
+    result = weather_open_meteo(city)
+
+    if result:
+        return result
+
+    return None
+
+
+# ============================================================
+# EXTRACT CITY FROM WEATHER QUERY
+# ============================================================
 
 def extract_city(message):
 
     text = message.strip()
 
     patterns = [
-        r"weather\s+(?:in|at|for)\s+(.+)",
-        r"temperature\s+(?:in|at|for)\s+(.+)",
-        r"forecast\s+(?:in|at|for)\s+(.+)",
+        r"weather\s+(?:in|at|of)\s+(.+)",
+        r"temperature\s+(?:in|at|of)\s+(.+)",
+        r"forecast\s+(?:in|at|of)\s+(.+)",
         r"weather\s+(.+)",
-        r"temperature\s+(.+)",
-        r"forecast\s+(.+)"
+        r"temperature\s+(.+)"
     ]
 
     for pattern in patterns:
@@ -175,11 +413,13 @@ def extract_city(message):
             city = match.group(1).strip()
 
             city = re.sub(
-                r"\b(today|tomorrow|now|right now)\b",
+                r"\b(today|now|currently|right now|tomorrow)\b",
                 "",
                 city,
                 flags=re.IGNORECASE
-            ).strip()
+            )
+
+            city = city.strip(" ?.,!")
 
             if city:
                 return city
@@ -187,941 +427,83 @@ def extract_city(message):
     return None
 
 
-# =========================================================
-# OPEN-METEO WEATHER
-# EXACT CITY MATCH FIX
-# =========================================================
-
-def weather_open_meteo(city):
-
-    try:
-
-        geo_url = (
-            "https://geocoding-api.open-meteo.com/v1/search"
-            f"?name={quote(city)}"
-            "&count=10"
-            "&language=en"
-            "&format=json"
-        )
-
-        geo_data = json.loads(
-            fetch_url(geo_url)
-        )
-
-        results = geo_data.get(
-            "results",
-            []
-        )
-
-        if not results:
-            return None
-
-
-        # -------------------------------------------------
-        # FIND BEST LOCATION
-        # Exact city name gets highest priority
-        # -------------------------------------------------
-
-        city_clean = city.strip().lower()
-
-        exact_match = None
-
-        for location in results:
-
-            name = location.get(
-                "name",
-                ""
-            ).strip().lower()
-
-            if name == city_clean:
-
-                exact_match = location
-                break
-
-
-        if exact_match:
-
-            location = exact_match
-
-        else:
-
-            # Prefer a result whose name starts
-            # with the requested city
-
-            starts_match = None
-
-            for item in results:
-
-                name = item.get(
-                    "name",
-                    ""
-                ).strip().lower()
-
-                if name.startswith(
-                    city_clean
-                ):
-
-                    starts_match = item
-                    break
-
-
-            if starts_match:
-
-                location = starts_match
-
-            else:
-
-                location = results[0]
-
-
-        latitude = location["latitude"]
-        longitude = location["longitude"]
-
-        city_name = location.get(
-            "name",
-            city
-        )
-
-        country = location.get(
-            "country",
-            ""
-        )
-
-
-        # -------------------------------------------------
-        # WEATHER DATA
-        # -------------------------------------------------
-
-        weather_url = (
-            "https://api.open-meteo.com/v1/forecast"
-            f"?latitude={latitude}"
-            f"&longitude={longitude}"
-            "&current="
-            "temperature_2m,"
-            "relative_humidity_2m,"
-            "apparent_temperature,"
-            "precipitation,"
-            "wind_speed_10m,"
-            "weather_code"
-            "&timezone=auto"
-        )
-
-        weather_data = json.loads(
-            fetch_url(weather_url)
-        )
-
-        current = weather_data.get(
-            "current"
-        )
-
-        if not current:
-            return None
-
-
-        weather_codes = {
-
-            0: "Clear sky",
-            1: "Mainly clear",
-            2: "Partly cloudy",
-            3: "Overcast",
-
-            45: "Fog",
-            48: "Depositing rime fog",
-
-            51: "Light drizzle",
-            53: "Moderate drizzle",
-            55: "Dense drizzle",
-
-            61: "Slight rain",
-            63: "Moderate rain",
-            65: "Heavy rain",
-
-            71: "Slight snow",
-            73: "Moderate snow",
-            75: "Heavy snow",
-
-            80: "Rain showers",
-            81: "Moderate rain showers",
-            82: "Violent rain showers",
-
-            95: "Thunderstorm"
-        }
-
-
-        weather_code = current.get(
-            "weather_code"
-        )
-
-        condition = weather_codes.get(
-            weather_code,
-            "Unknown conditions"
-        )
-
-
-        return {
-
-            "city": city_name,
-
-            "country": country,
-
-            "temperature":
-                current.get(
-                    "temperature_2m"
-                ),
-
-            "feels_like":
-                current.get(
-                    "apparent_temperature"
-                ),
-
-            "humidity":
-                current.get(
-                    "relative_humidity_2m"
-                ),
-
-            "rain":
-                current.get(
-                    "precipitation"
-                ),
-
-            "wind":
-                current.get(
-                    "wind_speed_10m"
-                ),
-
-            "condition":
-                condition,
-
-            "time":
-                current.get(
-                    "time"
-                ),
-
-            "source":
-                "Open-Meteo"
-        }
-
-
-    except Exception:
-
-        return None
-
-
-# =========================================================
-# WTTR FALLBACK
-# =========================================================
-
-def weather_wttr(city):
-
-    try:
-
-        url = (
-            f"https://wttr.in/{quote(city)}"
-            "?format=j1"
-        )
-
-        data = json.loads(
-            fetch_url(url)
-        )
-
-        current_list = data.get(
-            "current_condition",
-            []
-        )
-
-        if not current_list:
-            return None
-
-        current = current_list[0]
-
-
-        description = current.get(
-            "weatherDesc",
-            [{}]
-        )
-
-
-        condition = (
-            description[0].get(
-                "value",
-                "Unknown"
-            )
-            if description
-            else "Unknown"
-        )
-
-
-        area = data.get(
-            "nearest_area",
-            [{}]
-        )
-
-
-        area_name = city
-
-        country_name = ""
-
-
-        if area:
-
-            area_name = (
-                area[0]
-                .get(
-                    "areaName",
-                    [{}]
-                )[0]
-                .get(
-                    "value",
-                    city
-                )
-            )
-
-            country_name = (
-                area[0]
-                .get(
-                    "country",
-                    [{}]
-                )[0]
-                .get(
-                    "value",
-                    ""
-                )
-            )
-
-
-        return {
-
-            "city":
-                area_name,
-
-            "country":
-                country_name,
-
-            "temperature":
-                current.get(
-                    "temp_C"
-                ),
-
-            "feels_like":
-                current.get(
-                    "FeelsLikeC"
-                ),
-
-            "humidity":
-                current.get(
-                    "humidity"
-                ),
-
-            "rain":
-                current.get(
-                    "precipMM"
-                ),
-
-            "wind":
-                current.get(
-                    "windspeedKmph"
-                ),
-
-            "condition":
-                condition,
-
-            "time":
-                current.get(
-                    "observation_time"
-                ),
-
-            "source":
-                "wttr.in"
-        }
-
-
-    except Exception:
-
-        return None
-
-
-# =========================================================
-# WEATHER SEARCH
-# =========================================================
-
-def weather_search(city):
-
-    result = weather_open_meteo(city):
-    if result:
-        return result
-        
-    
-
-
-
-    return None
-
-
-# =========================================================
-# GOOGLE NEWS
-# =========================================================
-
-def google_news_search(query):
-
-    try:
-
-        rss_url = (
-            "https://news.google.com/rss/search?"
-            f"q={quote(query)}"
-            "&hl=en-IN"
-            "&gl=IN"
-            "&ceid=IN:en"
-        )
-
-        xml_data = fetch_url(
-            rss_url
-        )
-
-        root = ET.fromstring(
-            xml_data
-        )
-
-        results = []
-
-
-        for item in root.findall(
-            ".//item"
-        )[:5]:
-
-            title = item.findtext(
-                "title",
-                ""
-            )
-
-            link = item.findtext(
-                "link",
-                ""
-            )
-
-            pub_date = item.findtext(
-                "pubDate",
-                ""
-            )
-
-
-            if title:
-
-                results.append(
-                    f"{title}\n"
-                    f"Published: {pub_date}\n"
-                    f"Source: {link}"
-                )
-
-
-        return results
-
-
-    except Exception:
-
-        return []
-
-
-# =========================================================
-# WIKIPEDIA
-# =========================================================
-
-def wikipedia_search(query):
-
-    try:
-
-        url = (
-            "https://en.wikipedia.org/w/api.php?"
-            "action=query"
-            "&list=search"
-            f"&srsearch={quote(query)}"
-            "&format=json"
-            "&utf8=1"
-        )
-
-        data = json.loads(
-            fetch_url(url)
-        )
-
-        search_results = (
-            data
-            .get("query", {})
-            .get("search", [])
-        )
-
-        results = []
-
-
-        for item in search_results[:3]:
-
-            title = item.get(
-                "title",
-                ""
-            )
-
-            snippet = re.sub(
-                "<.*?>",
-                "",
-                item.get(
-                    "snippet",
-                    ""
-                )
-            )
-
-
-            if title:
-
-                results.append(
-                    f"{title}: {snippet}"
-                )
-
-
-        return results
-
-
-    except Exception:
-
-        return []
-
-
-# =========================================================
+# ============================================================
 # LIVE SEARCH
-# =========================================================
+# ============================================================
 
 def live_search(message):
 
-    if is_weather_query(
-        message
+    text = message.lower()
+
+    # WEATHER
+    if (
+        "weather" in text
+        or "temperature" in text
+        or "forecast" in text
     ):
 
-        city = extract_city(
-            message
-        )
-
+        city = extract_city(message)
 
         if not city:
+            return "WEATHER_ERROR: Please provide a city name."
 
-            return [
-                "WEATHER_ERROR: "
-                "A city name is required."
-            ]
+        result = weather_search(city)
 
+        if result:
+            return result
 
-        weather = weather_search(
-            city
+        return (
+            "WEATHER_ERROR: Weather data could not be retrieved "
+            "right now. Please try again later."
         )
-
-
-        if not weather:
-
-            return [
-                "WEATHER_ERROR: "
-                "Live weather data could not be retrieved."
-            ]
-
-
-        weather_text = (
-
-            "LIVE WEATHER:\n"
-
-            f"Location: "
-            f"{weather['city']}, "
-            f"{weather['country']}\n"
-
-            f"Temperature: "
-            f"{weather['temperature']}°C\n"
-
-            f"Feels like: "
-            f"{weather['feels_like']}°C\n"
-
-            f"Condition: "
-            f"{weather['condition']}\n"
-
-            f"Humidity: "
-            f"{weather['humidity']}%\n"
-
-            f"Rain: "
-            f"{weather['rain']} mm\n"
-
-            f"Wind: "
-            f"{weather['wind']} km/h\n"
-
-            f"Updated: "
-            f"{weather['time']}\n"
-
-            f"Source: "
-            f"{weather['source']}"
-        )
-
-
-        return [
-            weather_text
-        ]
-
 
     # NEWS
+    news = google_news_search(message)
 
-    results = google_news_search(
-        message
-    )
+    if news:
 
-    if results:
-        return results
+        output = "LIVE NEWS RESULTS:\n\n"
 
+        for index, item in enumerate(news, 1):
+
+            output += (
+                f"{index}. {item.get('title', 'No title')}\n"
+                f"Date: {item.get('date', 'Unknown')}\n\n"
+            )
+
+        return output
 
     # WIKIPEDIA FALLBACK
+    wiki = wikipedia_search(message)
 
-    results = wikipedia_search(
-        message
-    )
+    if wiki:
 
-    if results:
-        return results
+        output = "WEB INFORMATION:\n\n"
 
+        for index, item in enumerate(wiki, 1):
 
-    return [
-        "LIVE_SEARCH_ERROR: "
-        "Live information could not be retrieved."
-    ]
-
-
-# =========================================================
-# CHAT
-# =========================================================
-
-@app.post("/chat")
-def chat(request: ChatRequest):
-
-    if not HF_TOKEN:
-
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "HF_TOKEN is not configured "
-                "on the server."
-            )
-        )
-
-
-    message_text = (
-        request.message.strip()
-    )
-
-
-    # =====================================================
-    # DIRECT WEATHER
-    # =====================================================
-
-    if is_weather_query(
-        message_text
-    ):
-
-        city = extract_city(
-            message_text
-        )
-
-
-        if not city:
-
-            return {
-                "reply":
-                    "🌦️ Please tell me the city name.\n\n"
-                    "Example: weather in Cuttack"
-            }
-
-
-        weather = weather_search(
-            city
-        )
-
-
-        if weather:
-
-            reply = (
-
-                "🌦️ **Current Weather**\n\n"
-
-                f"📍 Location: "
-                f"{weather['city']}, "
-                f"{weather['country']}\n\n"
-
-                f"🌡️ Temperature: "
-                f"{weather['temperature']}°C\n"
-
-                f"🥵 Feels like: "
-                f"{weather['feels_like']}°C\n"
-
-                f"☁️ Condition: "
-                f"{weather['condition']}\n"
-
-                f"💧 Humidity: "
-                f"{weather['humidity']}%\n"
-
-                f"🌧️ Rain: "
-                f"{weather['rain']} mm\n"
-
-                f"💨 Wind: "
-                f"{weather['wind']} km/h\n\n"
-
-                f"🕒 Updated: "
-                f"{weather['time']}\n"
-
-                f"📡 Source: "
-                f"{weather['source']}"
+            output += (
+                f"{index}. {item.get('title', 'No title')}\n"
+                f"{item.get('snippet', '')}\n\n"
             )
 
+        return output
 
-            return {
-                "reply": reply
-            }
+    return "LIVE_SEARCH_ERROR: Live search could not retrieve data."
 
 
-        return {
+# ============================================================
+# HTML
+# ============================================================
 
-            "reply": (
-                "🌦️ Sorry bhai, I couldn't retrieve "
-                f"live weather data for {city} right now.\n\n"
-                "Please try again shortly."
-            )
-
-        }
-
-
-    # =====================================================
-    # PERSONALITY
-    # =====================================================
-
-    personality = PERSONALITIES.get(
-        request.personality,
-        PERSONALITIES["Friendly"]
-    )
-
-
-    response_style = STYLES.get(
-        request.response_style,
-        STYLES["Balanced"]
-    )
-
-
-    # =====================================================
-    # LIVE INFORMATION
-    # =====================================================
-
-    live_context = ""
-
-
-    if needs_live_search(
-        message_text
-    ):
-
-        results = live_search(
-            message_text
-        )
-
-
-        if results:
-
-            live_context = (
-                "\n\nLIVE INFORMATION "
-                "FROM WEB SOURCES:\n"
-                "Use these sources when "
-                "answering. Do not invent "
-                "information.\n"
-            )
-
-
-            for index, result in enumerate(
-                results,
-                1
-            ):
-
-                live_context += (
-                    f"\n{index}. "
-                    f"{result}\n"
-                )
-
-
-    # =====================================================
-    # SYSTEM PROMPT
-    # =====================================================
-
-    system_prompt = f"""
-
-You are RAIZEN, an advanced futuristic AI assistant.
-
-You were created and developed by Raihan Kausar.
-
-If someone asks who invented, created, developed,
-or made you, say that Raihan Kausar created and
-developed you.
-
-Personality:
-{personality}
-
-Response style:
-{response_style}
-
-Rules:
-
-- Be helpful and accurate.
-- Use conversation history when useful.
-- If live web information is provided, use it.
-- Clearly say when information could not be found.
-- Never invent sources.
-- Never pretend you searched if no live results exist.
-- Keep answers natural and easy to understand.
-- If LIVE_SEARCH_ERROR appears, clearly tell the user
-  that live search could not retrieve data.
-- If WEATHER_ERROR appears, explain that weather data
-  could not be retrieved or a city name is required.
-- Do not treat an error message as real-world information.
-- When live information is available, mention that it
-  is live/current.
-
-{live_context}
-"""
-
-
-    # =====================================================
-    # HISTORY
-    # =====================================================
-
-    messages = [
-
-        {
-            "role": "system",
-            "content": system_prompt
-        }
-
-    ]
-
-
-    for item in request.history[-12:]:
-
-        role = item.get(
-            "role",
-            "user"
-        )
-
-        content = item.get(
-            "content",
-            ""
-        )
-
-
-        if (
-            role in [
-                "user",
-                "assistant"
-            ]
-            and content
-        ):
-
-            messages.append({
-
-                "role": role,
-
-                "content": content
-
-            })
-
-
-    # =====================================================
-    # AI
-    # =====================================================
-
-    try:
-
-        response = (
-            client
-            .chat
-            .completions
-            .create(
-
-                model=MODEL,
-
-                messages=messages,
-
-                max_tokens=500
-
-            )
-        )
-
-
-        reply = (
-            response
-            .choices[0]
-            .message
-            .content
-        )
-
-
-        if (
-            not reply
-            or not reply.strip()
-        ):
-
-            reply = (
-                "Sorry bhai, I couldn't "
-                "generate a response right now."
-            )
-
-
-        return {
-            "reply": reply
-        }
-
-
-    except Exception as error:
-
-        raise HTTPException(
-            status_code=500,
-            detail=f"AI error: {str(error)}"
-        )
-
-
-# =========================================================
-# HEALTH
-# =========================================================
-
-@app.get("/health")
-def health():
-
-    return {
-
-        "status":
-            "RAIZEN online",
-
-        "token_loaded":
-            bool(HF_TOKEN),
-
-        "model":
-            MODEL,
-
-        "provider":
-            "novita",
-
-        "live_search":
-            True,
-
-        "weather":
-            True
-
-    }
-
-
-# =========================================================
-# FRONTEND
-# =========================================================
-
-HTML = r"""
+HTML = """
 <!DOCTYPE html>
 
 <html>
 
 <head>
 
-<meta name="viewport"
-      content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <title>RAIZEN AI</title>
 
@@ -1142,11 +524,10 @@ body {
         sans-serif;
 
     background:
-        linear-gradient(
-            135deg,
-            #070b16,
-            #0d1324,
-            #080c17
+        radial-gradient(
+            circle at top,
+            #17213d,
+            #080b14 55%
         );
 
     color: white;
@@ -1154,52 +535,57 @@ body {
     min-height: 100vh;
 }
 
-
 .container {
 
-    width: 100%;
-
-    max-width: 1000px;
+    max-width: 1100px;
 
     margin: auto;
 
-    min-height: 100vh;
+    height: 100vh;
 
     display: flex;
 
     flex-direction: column;
 
-    padding: 20px;
+    padding: 18px;
 }
-
 
 .header {
 
-    text-align: center;
+    display: flex;
 
-    padding: 20px 10px;
+    align-items: center;
+
+    justify-content: space-between;
+
+    padding: 14px 18px;
+
+    background: rgba(20, 28, 50, 0.85);
+
+    border: 1px solid #273556;
+
+    border-radius: 18px;
+
+    margin-bottom: 14px;
+
+    backdrop-filter: blur(12px);
 }
-
 
 .logo {
 
-    font-size: 34px;
+    font-size: 24px;
 
     font-weight: 800;
 
-    letter-spacing: 2px;
+    letter-spacing: 1px;
 }
 
+.status {
 
-.subtitle {
+    font-size: 12px;
 
-    color: #9ca9c7;
-
-    margin-top: 6px;
-
-    font-size: 14px;
+    color: #8db4ff;
 }
-
 
 .chat {
 
@@ -1207,7 +593,7 @@ body {
 
     overflow-y: auto;
 
-    padding: 20px 5px;
+    padding: 10px 4px 20px;
 
     display: flex;
 
@@ -1216,37 +602,29 @@ body {
     gap: 12px;
 }
 
-
 .message {
 
     max-width: 82%;
 
     padding: 13px 16px;
 
-    border-radius: 18px;
+    border-radius: 16px;
 
-    line-height: 1.5;
+    line-height: 1.55;
 
     white-space: pre-wrap;
 
     word-wrap: break-word;
 }
 
-
 .user {
 
     align-self: flex-end;
 
-    background:
-        linear-gradient(
-            135deg,
-            #2563eb,
-            #4f46e5
-        );
+    background: #2463eb;
 
     border-bottom-right-radius: 5px;
 }
-
 
 .assistant {
 
@@ -1254,11 +632,10 @@ body {
 
     background: #151d31;
 
-    border: 1px solid #27324c;
+    border: 1px solid #293653;
 
     border-bottom-left-radius: 5px;
 }
-
 
 .thinking {
 
@@ -1267,53 +644,48 @@ body {
     border: 1px solid #293653;
 }
 
-
 .input-area {
 
     display: flex;
 
     gap: 10px;
 
-    padding: 12px 0 5px;
+    padding-top: 10px;
 }
-
 
 .input {
 
     flex: 1;
 
-    border: none;
-
-    outline: none;
-
-    border-radius: 16px;
-
-    background: #121a2c;
+    background: #10172a;
 
     color: white;
 
-    border: 1px solid #293653;
+    border: 1px solid #2a3859;
+
+    outline: none;
+
+    border-radius: 15px;
 
     padding: 14px 16px;
 
-    font-size: 16px;
+    font-size: 15px;
 }
 
+.input:focus {
+
+    border-color: #4d7cff;
+}
 
 .send {
 
     border: none;
 
-    border-radius: 16px;
+    border-radius: 15px;
 
     padding: 0 22px;
 
-    background:
-        linear-gradient(
-            135deg,
-            #2563eb,
-            #7c3aed
-        );
+    background: #2867f0;
 
     color: white;
 
@@ -1322,6 +694,10 @@ body {
     cursor: pointer;
 }
 
+.send:hover {
+
+    background: #3b75f2;
+}
 
 .send:disabled {
 
@@ -1330,187 +706,216 @@ body {
     cursor: not-allowed;
 }
 
-
-.options {
+.controls {
 
     display: flex;
 
     gap: 8px;
 
-    flex-wrap: wrap;
+    margin-top: 10px;
 
-    margin-bottom: 8px;
+    flex-wrap: wrap;
 }
 
+select,
+button.control {
 
-select {
-
-    background: #121a2c;
+    background: #11192d;
 
     color: white;
 
-    border: 1px solid #293653;
+    border: 1px solid #2a3859;
 
     border-radius: 10px;
 
-    padding: 8px;
+    padding: 8px 11px;
 }
 
-
-.clear {
-
-    background: #121a2c;
-
-    color: #aeb9d3;
-
-    border: 1px solid #293653;
-
-    border-radius: 10px;
-
-    padding: 8px 12px;
+button.control {
 
     cursor: pointer;
 }
 
+.empty {
 
-@media(max-width:600px) {
+    margin: auto;
+
+    text-align: center;
+
+    opacity: 0.65;
+}
+
+.small {
+
+    font-size: 12px;
+
+    opacity: 0.6;
+
+    text-align: center;
+
+    padding-top: 8px;
+}
+
+@media(max-width: 600px) {
 
     .container {
-        padding: 12px;
+        padding: 10px;
     }
 
     .message {
-        max-width: 90%;
-    }
-
-    .input-area {
-        gap: 7px;
+        max-width: 92%;
     }
 
     .send {
         padding: 0 16px;
     }
-
 }
 
 </style>
 
 </head>
 
-
 <body>
-
 
 <div class="container">
 
+    <div class="header">
 
-<div class="header">
+        <div class="logo">
+            ⚡ RAIZEN
+        </div>
 
-<div class="logo">
-⚡ RAIZEN
-</div>
+        <div class="status">
+            AI ONLINE
+        </div>
 
-<div class="subtitle">
-Advanced AI Assistant
-</div>
-
-</div>
-
-
-<div class="options">
-
-<select id="personality">
-
-<option>Friendly</option>
-
-<option>Teacher</option>
-
-<option>Coding Assistant</option>
-
-<option>Professional</option>
-
-</select>
+    </div>
 
 
-<select id="style">
+    <div id="chat" class="chat">
 
-<option>Balanced</option>
+        <div id="empty" class="empty">
 
-<option>Short</option>
+            <h2>⚡ Welcome to RAIZEN</h2>
 
-<option>Detailed</option>
+            <p>
+                Ask me anything.
+            </p>
 
-</select>
+        </div>
 
-
-<button
-    class="clear"
-    onclick="clearChat()">
-
-Clear Chat
-
-</button>
-
-</div>
+    </div>
 
 
-<div
-    id="chat"
-    class="chat">
+    <div class="controls">
 
-</div>
+        <select id="personality">
 
+            <option>Friendly</option>
+            <option>Teacher</option>
+            <option>Coding Assistant</option>
+            <option>Professional</option>
 
-<div class="input-area">
-
-<input
-    id="input"
-    class="input"
-    placeholder="Ask RAIZEN anything..."
-    autocomplete="off">
+        </select>
 
 
-<button
-    id="sendButton"
-    class="send"
-    onclick="sendMessage()">
+        <select id="responseStyle">
 
-Send
+            <option>Short</option>
+            <option selected>Balanced</option>
+            <option>Detailed</option>
 
-</button>
+        </select>
 
-</div>
 
+        <button
+            class="control"
+            onclick="newChat()">
+            New Chat
+        </button>
+
+
+        <button
+            class="control"
+            onclick="clearChat()">
+            Clear Chat
+        </button>
+
+    </div>
+
+
+    <div class="input-area">
+
+        <input
+            id="messageInput"
+            class="input"
+            placeholder="Message RAIZEN..."
+            autocomplete="off"
+        >
+
+        <button
+            id="sendButton"
+            class="send"
+            onclick="sendMessage()">
+            Send
+        </button>
+
+    </div>
+
+
+    <div class="small">
+        RAIZEN • Created and developed by Raihan Kausar
+    </div>
 
 </div>
 
 
 <script>
 
-let history =
-    JSON.parse(
-        localStorage.getItem(
-            "raizen_history"
-        ) || "[]"
+let chatHistory = [];
+
+
+function saveHistory() {
+
+    localStorage.setItem(
+        "raizen_chat_history",
+        JSON.stringify(chatHistory.slice(-12))
     );
+}
 
 
-const chat =
-    document.getElementById(
-        "chat"
-    );
+function loadHistory() {
 
+    try {
 
-const input =
-    document.getElementById(
-        "input"
-    );
+        const saved =
+            localStorage.getItem(
+                "raizen_chat_history"
+            );
 
+        if (!saved) {
+            return;
+        }
 
-const sendButton =
-    document.getElementById(
-        "sendButton"
-    );
+        chatHistory =
+            JSON.parse(saved);
+
+        for (
+            const item of chatHistory
+        ) {
+
+            displayMessage(
+                item.role,
+                item.content
+            );
+        }
+
+    } catch (error) {
+
+        chatHistory = [];
+
+    }
+}
 
 
 function displayMessage(
@@ -1519,11 +924,18 @@ function displayMessage(
     extraClass = ""
 ) {
 
-    const div =
-        document.createElement(
-            "div"
-        );
+    const chat =
+        document.getElementById("chat");
 
+    const empty =
+        document.getElementById("empty");
+
+    if (empty) {
+        empty.remove();
+    }
+
+    const div =
+        document.createElement("div");
 
     div.className =
         "message " +
@@ -1531,79 +943,51 @@ function displayMessage(
         " " +
         extraClass;
 
-
     div.textContent = text;
-
 
     chat.appendChild(div);
 
-
     chat.scrollTop =
         chat.scrollHeight;
-
 
     return div;
 }
 
 
-function renderHistory() {
-
-    chat.innerHTML = "";
-
-
-    history.forEach(
-        item => {
-
-            displayMessage(
-                item.role,
-                item.content
-            );
-
-        }
-    );
-
-}
-
-
-renderHistory();
-
-
 async function sendMessage() {
 
-    const text =
+    const input =
+        document.getElementById(
+            "messageInput"
+        );
+
+    const sendButton =
+        document.getElementById(
+            "sendButton"
+        );
+
+    const message =
         input.value.trim();
 
-
-    if (!text) {
+    if (!message) {
         return;
     }
 
-
     input.value = "";
+
+    sendButton.disabled = true;
 
 
     displayMessage(
         "user",
-        text
+        message
     );
 
 
-    history.push({
-
+    chatHistory.push({
         role: "user",
-
-        content: text
-
+        content: message
     });
-
-
-    localStorage.setItem(
-        "raizen_history",
-        JSON.stringify(history)
-    );
-
-
-    sendButton.disabled = true;
 
 
     const thinkingMessage =
@@ -1614,13 +998,24 @@ async function sendMessage() {
         );
 
 
+    const personality =
+        document.getElementById(
+            "personality"
+        ).value;
+
+
+    const responseStyle =
+        document.getElementById(
+            "responseStyle"
+        ).value;
+
+
     try {
 
         const response =
             await fetch(
                 "/chat",
                 {
-
                     method: "POST",
 
                     headers: {
@@ -1628,32 +1023,25 @@ async function sendMessage() {
                             "application/json"
                     },
 
-                    body:
-                        JSON.stringify({
+                    body: JSON.stringify({
 
-                            message:
-                                text,
+                        message: message,
 
-                            history:
-                                history.slice(
-                                    -12
-                                ),
+                        history:
+                            chatHistory.slice(-12),
 
-                            personality:
-                                document
-                                .getElementById(
-                                    "personality"
-                                )
-                                .value,
+                        personality:
+                            personality,
 
-                            response_style:
-                                document
-                                .getElementById(
-                                    "style"
-                                )
-                                .value
+                        response_style:
+                            responseStyle,
 
-                        })
+                        custom_instructions:
+                            localStorage.getItem(
+                                "raizen_custom_instructions"
+                            ) || ""
+
+                    })
 
                 }
             );
@@ -1668,19 +1056,9 @@ async function sendMessage() {
         }
 
 
-        if (!response.ok) {
-
-            throw new Error(
-                data.detail ||
-                "Server error"
-            );
-
-        }
-
-
         const reply =
             data.reply ||
-            "Sorry, I couldn't respond.";
+            "Sorry, I could not generate a response.";
 
 
         displayMessage(
@@ -1689,24 +1067,16 @@ async function sendMessage() {
         );
 
 
-        history.push({
-
+        chatHistory.push({
             role: "assistant",
-
             content: reply
-
         });
 
 
-        localStorage.setItem(
-            "raizen_history",
-            JSON.stringify(history)
-        );
+        saveHistory();
 
 
-    }
-
-    catch (error) {
+    } catch (error) {
 
         if (thinkingMessage) {
             thinkingMessage.remove();
@@ -1714,8 +1084,7 @@ async function sendMessage() {
 
 
         const errorMessage =
-            "⚠️ Sorry bhai, something went wrong.\n\n"
-            + error.message;
+            "⚠️ Something went wrong. Please try again.";
 
 
         displayMessage(
@@ -1724,24 +1093,15 @@ async function sendMessage() {
         );
 
 
-        history.push({
-
+        chatHistory.push({
             role: "assistant",
-
             content: errorMessage
-
         });
 
 
-        localStorage.setItem(
-            "raizen_history",
-            JSON.stringify(history)
-        );
+        saveHistory();
 
-    }
-
-
-    finally {
+    } finally {
 
         sendButton.disabled = false;
 
@@ -1754,37 +1114,55 @@ async function sendMessage() {
 
 function clearChat() {
 
-    history = [];
+    chatHistory = [];
 
     localStorage.removeItem(
-        "raizen_history"
+        "raizen_chat_history"
     );
 
-    chat.innerHTML = "";
+    const chat =
+        document.getElementById("chat");
+
+    chat.innerHTML = `
+        <div id="empty" class="empty">
+            <h2>⚡ Welcome to RAIZEN</h2>
+            <p>Ask me anything.</p>
+        </div>
+    `;
+}
+
+
+function newChat() {
+
+    clearChat();
 
 }
 
 
-input.addEventListener(
-    "keydown",
-    function(event) {
+document
+    .getElementById("messageInput")
+    .addEventListener(
+        "keydown",
+        function(event) {
 
-        if (
-            event.key === "Enter"
-            && !event.shiftKey
-        ) {
+            if (
+                event.key === "Enter"
+                && !event.shiftKey
+            ) {
 
-            event.preventDefault();
+                event.preventDefault();
 
-            sendMessage();
+                sendMessage();
+
+            }
 
         }
+    );
 
-    }
-);
+
+loadHistory();
 
 </script>
-
 
 </body>
 
@@ -1792,14 +1170,251 @@ input.addEventListener(
 """
 
 
-# =========================================================
+# ============================================================
 # HOME
-# =========================================================
+# ============================================================
 
-@app.get(
-    "/",
-    response_class=HTMLResponse
-)
-def home():
+@app.get("/", response_class=HTMLResponse)
+async def home():
 
-    return HTML
+    return HTMLResponse(
+        content=HTML
+    )
+
+
+# ============================================================
+# CHAT
+# ============================================================
+
+@app.post("/chat")
+async def chat(request: ChatRequest):
+
+    message = request.message.strip()
+
+    if not message:
+
+        return {
+            "reply": "Please enter a message."
+        }
+
+
+    # --------------------------------------------------------
+    # DIRECT WEATHER RESPONSE
+    # --------------------------------------------------------
+
+    if (
+        "weather" in message.lower()
+        or "temperature" in message.lower()
+        or "forecast" in message.lower()
+    ):
+
+        city = extract_city(message)
+
+        if not city:
+
+            return {
+                "reply":
+                    "🌤️ Please mention a city name, "
+                    "for example: weather in Cuttack."
+            }
+
+
+        weather_result =
+            weather_search(city)
+
+
+        if weather_result:
+
+            return {
+                "reply":
+                    weather_result
+            }
+
+
+        return {
+            "reply":
+                "⚠️ I couldn't retrieve live weather "
+                "data right now. Please try again later."
+        }
+
+
+    # --------------------------------------------------------
+    # LIVE SEARCH
+    # --------------------------------------------------------
+
+    live_data = ""
+
+    if needs_live_search(message):
+
+        live_data = live_search(message)
+
+
+    # --------------------------------------------------------
+    # SYSTEM PROMPT
+    # --------------------------------------------------------
+
+    personality =
+        PERSONALITIES.get(
+            request.personality,
+            PERSONALITIES["Friendly"]
+        )
+
+
+    style =
+        STYLES.get(
+            request.response_style,
+            STYLES["Balanced"]
+        )
+
+
+    custom =
+        request.custom_instructions.strip()
+
+
+    system_prompt = f"""
+
+You are RAIZEN, an advanced AI assistant.
+
+You were created and developed by Raihan Kausar.
+
+If someone asks who invented, created, developed,
+or made you, say that Raihan Kausar created
+and developed you.
+
+PERSONALITY:
+{personality}
+
+RESPONSE STYLE:
+{style}
+
+CUSTOM USER INSTRUCTIONS:
+{custom}
+
+IMPORTANT:
+
+- Be accurate and helpful.
+- Do not pretend to know information you do not know.
+- Keep explanations clear.
+- If live information is provided below, use it carefully.
+- If LIVE_SEARCH_ERROR appears, clearly tell the user
+  that live search could not retrieve data.
+- If WEATHER_ERROR appears, clearly explain that weather
+  data could not be retrieved or that a city name is required.
+- Do not treat an error message as real-world information.
+- When live information is available, mention that it is live/current.
+
+LIVE INFORMATION:
+{live_data}
+
+"""
+
+
+    messages = [
+        {
+            "role": "system",
+            "content": system_prompt
+        }
+    ]
+
+
+    # --------------------------------------------------------
+    # HISTORY
+    # --------------------------------------------------------
+
+    for item in request.history[-12:]:
+
+        role = item.get("role")
+
+        content = item.get("content")
+
+
+        if role in ["user", "assistant"] and content:
+
+            messages.append({
+                "role": role,
+                "content": content
+            })
+
+
+    # --------------------------------------------------------
+    # CURRENT MESSAGE
+    # --------------------------------------------------------
+
+    if not request.history or (
+        request.history[-1].get("content")
+        != message
+    ):
+
+        messages.append({
+            "role": "user",
+            "content": message
+        })
+
+
+    # --------------------------------------------------------
+    # AI RESPONSE
+    # --------------------------------------------------------
+
+    try:
+
+        response = client.chat.completions.create(
+
+            model=MODEL,
+
+            messages=messages,
+
+            max_tokens=500
+
+        )
+
+
+        reply = response.choices[0].message.content
+
+
+        if not reply:
+
+            reply = (
+                "Sorry, I could not generate a response."
+            )
+
+
+        return {
+            "reply": reply
+        }
+
+
+    except Exception as error:
+
+        print(
+            "RAIZEN ERROR:",
+            str(error)
+        )
+
+        return {
+            "reply":
+                "⚠️ RAIZEN is temporarily unable "
+                "to respond. Please try again."
+        }
+
+
+# ============================================================
+# HEALTH CHECK
+# ============================================================
+
+@app.get("/health")
+async def health():
+
+    return {
+
+        "status": "ok",
+
+        "token_loaded":
+            bool(HF_TOKEN),
+
+        "model":
+            MODEL,
+
+        "live_search":
+            True
+
+    }
