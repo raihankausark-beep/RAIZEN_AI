@@ -1156,7 +1156,7 @@ async def vision(
         print("VISION ERROR:", error)
 
         return {
-            "reply": "⚠️ I couldn't analyze this image right now."
+            "error": "VISION ERROR: " + repr(error)
         }
 
 
