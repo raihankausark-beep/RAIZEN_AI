@@ -15,6 +15,8 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
+import psycopg
+from psycopg.rows import dict_row
 from pypdf import PdfReader
 from docx import Document
 
@@ -23,24 +25,18 @@ app = FastAPI()
 HF_TOKEN = os.getenv("HF_TOKEN")
 MODEL = "zai-org/GLM-5.3-Flash"
 
-client = InferenceClient(
-    api_key=HF_TOKEN
-)
+client = InferenceClient(api_key=HF_TOKEN)
 
 VISION_MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
 
-vision_client = InferenceClient(
-    provider="novita",
-    api_key=HF_TOKEN
-)
+vision_client = InferenceClient(api_key=HF_TOKEN)
 
 IMAGE_MODEL = "black-forest-labs/FLUX.1-schnell"
 
 image_client = InferenceClient(api_key=HF_TOKEN)
 
 
-USERS_FILE = "raizen_users.json"
-AUTH_TOKENS = {}
+DATABASE_URL = os.getenv("DATABASE_URL")
 AUTH_TOKEN_TTL = 60 * 60 * 24 * 7
 
 
@@ -49,23 +45,80 @@ class AuthRequest(BaseModel):
     password: str
 
 
-def load_users():
+def get_db_connection():
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is not configured on the server.")
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row, connect_timeout=10)
+
+
+def init_database():
+    if not DATABASE_URL:
+        print("DATABASE WARNING: DATABASE_URL is not configured.")
+        return False
+
     try:
-        if not os.path.exists(USERS_FILE):
-            return {}
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS raizen_users (
+                        username_key TEXT PRIMARY KEY,
+                        username TEXT NOT NULL,
+                        salt TEXT NOT NULL,
+                        password_hash TEXT NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL
+                    )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS raizen_sessions (
+                        token_hash TEXT PRIMARY KEY,
+                        username_key TEXT NOT NULL REFERENCES raizen_users(username_key) ON DELETE CASCADE,
+                        expires_at TIMESTAMPTZ NOT NULL
+                    )
+                """)
+                cur.execute("DELETE FROM raizen_sessions WHERE expires_at < NOW()")
+            conn.commit()
+        migrate_legacy_users()
+        return True
     except Exception as error:
-        print("USER DATABASE READ ERROR:", error)
-        return {}
+        print("DATABASE INIT ERROR:", error)
+        return False
 
 
-def save_users(users):
-    temp = USERS_FILE + ".tmp"
-    with open(temp, "w", encoding="utf-8") as f:
-        json.dump(users, f, indent=2)
-    os.replace(temp, USERS_FILE)
+def migrate_legacy_users():
+    legacy_file = "raizen_users.json"
+    if not os.path.exists(legacy_file):
+        return
+
+    try:
+        with open(legacy_file, "r", encoding="utf-8") as f:
+            users = json.load(f)
+        if not isinstance(users, dict) or not users:
+            return
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                for user in users.values():
+                    username = str(user.get("username", "")).strip()
+                    salt = str(user.get("salt", ""))
+                    password_hash = str(user.get("password_hash", ""))
+                    created_at = user.get("created_at") or datetime.now(timezone.utc).isoformat()
+                    if username and salt and password_hash:
+                        cur.execute(
+                            """INSERT INTO raizen_users
+                               (username_key, username, salt, password_hash, created_at)
+                               VALUES (%s, %s, %s, %s, %s)
+                               ON CONFLICT (username_key) DO NOTHING""",
+                            (username.lower(), username, salt, password_hash, created_at)
+                        )
+            conn.commit()
+        print("DATABASE: legacy users migrated successfully.")
+    except Exception as error:
+        print("LEGACY USER MIGRATION ERROR:", error)
+
+
+@app.on_event("startup")
+async def startup_database():
+    init_database()
 
 
 def hash_password(password, salt=None):
@@ -79,22 +132,57 @@ def verify_password(password, salt, expected_hash):
     return secrets.compare_digest(digest, expected_hash)
 
 
+def is_creator_username(username):
+    return bool(username) and username.strip().lower() in {
+        "raihan",
+        "raihankausar",
+        "raihankausarkausar"
+    }
+
+
+def hash_token(token):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def create_auth_token(username):
     token = secrets.token_urlsafe(32)
-    AUTH_TOKENS[token] = {"username": username, "expires": time.time() + AUTH_TOKEN_TTL}
-    return token
+    expires_at = datetime.now(timezone.utc).timestamp() + AUTH_TOKEN_TTL
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO raizen_sessions (token_hash, username_key, expires_at)
+                       VALUES (%s, %s, to_timestamp(%s))""",
+                    (hash_token(token), username.lower(), expires_at)
+                )
+            conn.commit()
+        return token
+    except Exception as error:
+        print("SESSION CREATE ERROR:", error)
+        raise
 
 
 def get_authenticated_username(token):
     if not token:
         return None
-    session = AUTH_TOKENS.get(token)
-    if not session:
-        return None
-    if session["expires"] < time.time():
-        AUTH_TOKENS.pop(token, None)
-        return None
-    return session["username"]
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT u.username
+                       FROM raizen_sessions s
+                       JOIN raizen_users u ON u.username_key = s.username_key
+                       WHERE s.token_hash = %s AND s.expires_at > NOW()""",
+                    (hash_token(token),)
+                )
+                row = cur.fetchone()
+                if row:
+                    return row["username"]
+                cur.execute("DELETE FROM raizen_sessions WHERE token_hash = %s", (hash_token(token),))
+            conn.commit()
+    except Exception as error:
+        print("SESSION CHECK ERROR:", error)
+    return None
 
 
 class ChatRequest(BaseModel):
@@ -1332,31 +1420,62 @@ async def register(request: AuthRequest):
         return {"ok": False, "message": "Username must be 3–20 characters using letters, numbers, or underscore."}
     if len(request.password) < 8:
         return {"ok": False, "message": "Password must be at least 8 characters."}
-    users = load_users()
-    key = username.lower()
-    if key in users:
-        return {"ok": False, "message": "That username already exists."}
+
     salt, password_hash = hash_password(request.password)
-    users[key] = {"username": username, "salt": salt, "password_hash": password_hash, "created_at": datetime.now(timezone.utc).isoformat()}
-    save_users(users)
-    return {"ok": True, "message": "Account created successfully.", "username": username, "token": create_auth_token(username)}
+    created_at = datetime.now(timezone.utc)
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO raizen_users
+                       (username_key, username, salt, password_hash, created_at)
+                       VALUES (%s, %s, %s, %s, %s)""",
+                    (username.lower(), username, salt, password_hash, created_at)
+                )
+            conn.commit()
+        token = create_auth_token(username)
+        return {"ok": True, "message": "Account created successfully.", "username": username, "token": token}
+    except psycopg.errors.UniqueViolation:
+        return {"ok": False, "message": "That username already exists."}
+    except Exception as error:
+        print("REGISTER ERROR:", error)
+        return {"ok": False, "message": "Account service is temporarily unavailable. Please try again."}
 
 
 @app.post("/login")
 async def login(request: AuthRequest):
     username = request.username.strip()
-    user = load_users().get(username.lower())
-    if not user or not verify_password(request.password, user.get("salt", ""), user.get("password_hash", "")):
-        return {"ok": False, "message": "Invalid username or password."}
-    return {"ok": True, "message": "Login successful.", "username": user["username"], "token": create_auth_token(user["username"])}
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT username, salt, password_hash FROM raizen_users WHERE username_key = %s",
+                    (username.lower(),)
+                )
+                user = cur.fetchone()
+
+        if not user or not verify_password(request.password, user["salt"], user["password_hash"]):
+            return {"ok": False, "message": "Invalid username or password."}
+
+        token = create_auth_token(user["username"])
+        return {"ok": True, "message": "Login successful.", "username": user["username"], "token": token}
+    except Exception as error:
+        print("LOGIN ERROR:", error)
+        return {"ok": False, "message": "Account service is temporarily unavailable. Please try again."}
 
 
 @app.post("/logout")
 async def logout(token: str = ""):
     if token:
-        AUTH_TOKENS.pop(token, None)
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM raizen_sessions WHERE token_hash = %s", (hash_token(token),))
+                conn.commit()
+        except Exception as error:
+            print("LOGOUT ERROR:", error)
     return {"ok": True}
-
 
 
 @app.get("/creator-dashboard")
@@ -1369,19 +1488,25 @@ async def creator_dashboard(token: str = ""):
     if username.lower() not in creator_names:
         return {"ok": False, "message": "Creator access denied."}
 
-    users = load_users()
-    return {
-        "ok": True,
-        "creator": "Raihan Kausar",
-        "total_users": len(users),
-        "users": [
-            {
-                "username": user.get("username", ""),
-                "created_at": user.get("created_at", "")
-            }
-            for user in users.values()
-        ]
-    }
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT username, created_at FROM raizen_users ORDER BY created_at DESC"
+                )
+                users = cur.fetchall()
+        return {
+            "ok": True,
+            "creator": "Raihan Kausar",
+            "total_users": len(users),
+            "users": [
+                {"username": user["username"], "created_at": user["created_at"].isoformat()}
+                for user in users
+            ]
+        }
+    except Exception as error:
+        print("CREATOR DASHBOARD ERROR:", error)
+        return {"ok": False, "message": "Could not load creator dashboard."}
 
 
 @app.get("/auth-check")
@@ -1710,9 +1835,21 @@ async def generate_image(request: ImageRequest):
 
 @app.get("/health")
 async def health():
+    database_ok = False
+    if DATABASE_URL:
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1 AS ok")
+                    database_ok = bool(cur.fetchone())
+        except Exception as error:
+            print("HEALTH DATABASE ERROR:", error)
+
     return {
-        "status": "ok",
+        "status": "ok" if database_ok and bool(HF_TOKEN) else "degraded",
         "token_loaded": bool(HF_TOKEN),
+        "database_configured": bool(DATABASE_URL),
+        "database_connected": database_ok,
         "model": MODEL,
         "vision_model": VISION_MODEL,
         "vision": True,
