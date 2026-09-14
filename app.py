@@ -570,6 +570,8 @@ HTML = r"""
 <title>RAIZEN AI</title>
 <style>
 *{box-sizing:border-box}html,body{margin:0;padding:0;width:100%;min-height:100%}body{font-family:Arial,Helvetica,sans-serif;color:#f8fafc;background:radial-gradient(circle at 15% 5%,rgba(59,130,246,.22),transparent 28%),radial-gradient(circle at 85% 15%,rgba(139,92,246,.20),transparent 30%),radial-gradient(circle at 50% 100%,rgba(14,165,233,.10),transparent 35%),#05070d}.container{width:min(1120px,100%);min-height:100vh;margin:auto;padding:18px;display:flex;flex-direction:column}.header{padding:17px 20px;background:rgba(15,23,42,.72);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.09);border-radius:22px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 14px 50px rgba(0,0,0,.28);position:sticky;top:10px;z-index:10}.logo{font-size:28px;font-weight:850;letter-spacing:.6px}.status{font-size:12px;color:#86efac;font-weight:800;letter-spacing:.5px;display:flex;align-items:center;gap:7px}.status:before{content:"";width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 12px rgba(74,222,128,.8)}.chat{flex:1;overflow-y:auto;padding:8px 4px 22px;scroll-behavior:smooth}#welcome{text-align:center;margin:42px auto 28px;max-width:760px;padding:34px 25px;background:linear-gradient(145deg,rgba(30,41,59,.72),rgba(15,23,42,.45));border:1px solid rgba(255,255,255,.08);border-radius:28px;box-shadow:0 20px 70px rgba(0,0,0,.28);font-size:17px;line-height:1.75}#welcome::first-line{font-size:29px;font-weight:850}.message{max-width:82%;padding:14px 17px;margin:9px 0;border-radius:19px;white-space:pre-wrap;line-height:1.58;animation:messageIn .22s ease;box-shadow:0 8px 28px rgba(0,0,0,.12)}@keyframes messageIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}.user{margin-left:auto;background:linear-gradient(135deg,#2563eb,#7c3aed);border:1px solid rgba(255,255,255,.08)}.assistant{background:rgba(15,23,42,.86);border:1px solid rgba(255,255,255,.075)}.thinking{opacity:.72}.controls{display:flex;gap:8px;margin-bottom:9px;flex-wrap:wrap}select,.control{background:rgba(15,23,42,.88);color:#f8fafc;border:1px solid rgba(255,255,255,.10);border-radius:13px;padding:9px 11px;outline:none}.control{cursor:pointer;transition:transform .18s ease,border-color .18s ease,background .18s ease}.control:hover{transform:translateY(-1px);border-color:rgba(129,140,248,.55);background:rgba(30,41,59,.95)}.file-panel,.vision-panel{display:flex;gap:9px;align-items:center;margin-bottom:9px;flex-wrap:wrap;padding:10px 12px;background:rgba(15,23,42,.55);border:1px solid rgba(255,255,255,.065);border-radius:15px}.file-input,.vision-input{max-width:100%;color:#cbd5e1;font-size:13px}.file-name,.vision-name{font-size:12px;opacity:.76}.input-area{display:flex;gap:9px;padding-top:3px}#messageInput{flex:1;min-width:0;padding:15px 17px;background:rgba(15,23,42,.94);color:white;border:1px solid rgba(255,255,255,.11);border-radius:17px;outline:none;font-size:15px;box-shadow:0 10px 35px rgba(0,0,0,.16)}#messageInput::placeholder{color:#94a3b8}#messageInput:focus{border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.13),0 10px 35px rgba(0,0,0,.18)}#sendButton{min-width:82px;padding:0 21px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:white;border:0;border-radius:17px;cursor:pointer;font-weight:800;font-size:14px;transition:transform .18s ease,filter .18s ease;box-shadow:0 10px 30px rgba(79,70,229,.24)}#sendButton:hover{transform:translateY(-1px);filter:brightness(1.08)}#sendButton:disabled{opacity:.55;cursor:not-allowed;transform:none}.message a{color:#93c5fd;text-decoration:underline;word-break:break-all}.search-badge{display:inline-block;font-size:11px;padding:3px 7px;border:1px solid #3b4d73;border-radius:999px;opacity:.8;margin-bottom:5px}.small{text-align:center;opacity:.48;font-size:11px;margin-top:11px;padding-bottom:3px}@media(max-width:650px){.container{padding:9px}.header{padding:14px 15px;border-radius:18px;top:5px}.logo{font-size:23px}.status{font-size:10px}#welcome{margin:24px auto 20px;padding:27px 17px;border-radius:23px;font-size:14px}#welcome::first-line{font-size:23px}.message{max-width:93%;font-size:14px;padding:12px 14px}.controls{gap:6px}select,.control{font-size:12px;padding:8px 9px}.input-area{position:sticky;bottom:0;padding:8px 0;background:#05070d}#messageInput{font-size:14px;padding:13px}#sendButton{min-width:67px;padding:0 14px}.file-panel,.vision-panel{padding:8px}.small{font-size:10px}}
+
+.hero{margin:8px auto 18px;max-width:900px;padding:34px 24px 26px;text-align:center;border-radius:30px;background:linear-gradient(145deg,rgba(30,41,59,.78),rgba(15,23,42,.48));border:1px solid rgba(255,255,255,.08);box-shadow:0 20px 80px rgba(0,0,0,.25)}.hero-kicker{font-size:12px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#93c5fd;margin-bottom:10px}.hero-title{font-size:42px;font-weight:900;letter-spacing:-1.2px;margin:0 0 8px}.hero-subtitle{font-size:16px;color:#cbd5e1;margin:0 auto 22px;max-width:600px;line-height:1.6}.prompt-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:780px;margin:auto}.prompt-card{padding:13px 12px;border-radius:16px;background:rgba(2,6,23,.48);border:1px solid rgba(255,255,255,.08);color:#e2e8f0;text-align:left;cursor:pointer;transition:.18s;font-size:13px;line-height:1.4}.prompt-card:hover{transform:translateY(-2px);border-color:rgba(129,140,248,.55);background:rgba(30,41,59,.78)}.prompt-card strong{display:block;color:#fff;margin-bottom:3px}@media(max-width:650px){.hero{padding:27px 15px 20px;border-radius:23px}.hero-title{font-size:31px}.hero-subtitle{font-size:14px}.prompt-grid{grid-template-columns:1fr 1fr;gap:8px}.prompt-card{font-size:12px;padding:11px 10px}}
 </style>
 </head>
 
@@ -582,9 +584,20 @@ HTML = r"""
 </div>
 
 <div id="chat" class="chat">
-<div id="welcome" class="assistant message">
-â¡ Welcome to RAIZEN. Ask me anything.
+<div class="hero" id="heroPanel">
+<div class="hero-kicker">Your personal AI assistant</div>
+<div class="hero-title">Meet RAIZEN â¡</div>
+<div class="hero-subtitle">Chat, analyze images, understand your files, search the web and check the weather â all in one place.</div>
+<div class="prompt-grid">
+<button class="prompt-card" onclick="usePrompt('Explain artificial intelligence simply')"><strong>ð¬ Chat</strong>Ask anything</button>
+<button class="prompt-card" onclick="usePrompt('What can you tell me about this image?')"><strong>ðï¸ Vision</strong>Analyze an image</button>
+<button class="prompt-card" onclick="usePrompt('Summarize my uploaded document')"><strong>ð Files</strong>Ask about a file</button>
+<button class="prompt-card" onclick="usePrompt('Search the latest AI news')"><strong>ð Web</strong>Search the internet</button>
+<button class="prompt-card" onclick="usePrompt('What is the weather in Cuttack today?')"><strong>ð¤ï¸ Weather</strong>Check conditions</button>
+<button class="prompt-card" onclick="usePrompt('Tell me what you remember from this conversation')"><strong>ð§  Memory</strong>Use chat context</button>
 </div>
+</div>
+<div id="welcome" class="assistant message">â¡ Welcome to RAIZEN. Ask me anything.</div>
 </div>
 
 <div class="controls">
@@ -796,6 +809,12 @@ function displayMessage(role, text, extraClass) {
     chat.scrollTop = chat.scrollHeight;
 
     return div;
+}
+
+function usePrompt(text) {
+    const input = document.getElementById("messageInput");
+    input.value = text;
+    input.focus();
 }
 
 async function sendMessage() {
