@@ -7,7 +7,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
@@ -23,6 +23,7 @@ client = InferenceClient(
     provider="novita",
     api_key=HF_TOKEN
 )
+
 VISION_MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
 
 vision_client = InferenceClient(
@@ -37,7 +38,6 @@ class ChatRequest(BaseModel):
     personality: str = "Friendly"
     response_style: str = "Balanced"
     custom_instructions: str = ""
-    document_text: str = ""
 
 
 
@@ -568,156 +568,7 @@ HTML = r"""
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RAIZEN AI</title>
 <style>
-* { box-sizing: border-box; }
-
-body {
-    margin: 0;
-    font-family: Arial, sans-serif;
-    background: #080b14;
-    color: white;
-}
-
-.container {
-    max-width: 1000px;
-    height: 100vh;
-    margin: auto;
-    padding: 15px;
-    display: flex;
-    flex-direction: column;
-}
-
-.header {
-    padding: 15px;
-    background: #11192d;
-    border: 1px solid #293653;
-    border-radius: 16px;
-    margin-bottom: 12px;
-    display: flex;
-    justify-content: space-between;
-}
-
-.logo {
-    font-size: 24px;
-    font-weight: bold;
-}
-
-.status {
-    opacity: 0.7;
-    font-size: 13px;
-}
-
-.chat {
-    flex: 1;
-    overflow-y: auto;
-    padding: 10px 0;
-}
-
-.message {
-    max-width: 82%;
-    padding: 12px 15px;
-    margin: 8px 0;
-    border-radius: 15px;
-    white-space: pre-wrap;
-    line-height: 1.5;
-}
-
-.user {
-    margin-left: auto;
-    background: #2463eb;
-}
-
-.assistant {
-    background: #151d31;
-    border: 1px solid #293653;
-}
-
-.thinking {
-    opacity: 0.7;
-}
-
-.controls {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 8px;
-    flex-wrap: wrap;
-}
-
-select,
-.control {
-    background: #11192d;
-    color: white;
-    border: 1px solid #293653;
-    border-radius: 10px;
-    padding: 8px;
-}
-
-.input-area {
-    display: flex;
-    gap: 8px;
-}
-
-#messageInput {
-    flex: 1;
-    padding: 13px;
-    background: #11192d;
-    color: white;
-    border: 1px solid #293653;
-    border-radius: 13px;
-    outline: none;
-}
-
-#sendButton {
-    padding: 0 20px;
-    background: #2463eb;
-    color: white;
-    border: 0;
-    border-radius: 13px;
-    cursor: pointer;
-}
-
-#sendButton:disabled {
-    opacity: 0.6;
-}
-
-.file-panel {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    margin-bottom: 8px;
-    flex-wrap: wrap;
-}
-.file-input {
-    max-width: 100%;
-    color: #cbd5e1;
-    font-size: 13px;
-}
-.file-name {
-    font-size: 12px;
-    opacity: 0.7;
-}
-
-.small {
-    text-align: center;
-    opacity: 0.5;
-    font-size: 12px;
-    margin-top: 8px;
-}
-
-.message a {
-    color: #7db2ff;
-    text-decoration: underline;
-    word-break: break-all;
-}
-
-.search-badge {
-    display: inline-block;
-    font-size: 11px;
-    padding: 3px 7px;
-    border: 1px solid #3a4d73;
-    border-radius: 999px;
-    opacity: 0.8;
-    margin-bottom: 5px;
-}
+*{box-sizing:border-box}html,body{margin:0;padding:0;width:100%;min-height:100%}body{font-family:Arial,Helvetica,sans-serif;color:#f8fafc;background:radial-gradient(circle at 15% 5%,rgba(59,130,246,.22),transparent 28%),radial-gradient(circle at 85% 15%,rgba(139,92,246,.20),transparent 30%),radial-gradient(circle at 50% 100%,rgba(14,165,233,.10),transparent 35%),#05070d}.container{width:min(1120px,100%);min-height:100vh;margin:auto;padding:18px;display:flex;flex-direction:column}.header{padding:17px 20px;background:rgba(15,23,42,.72);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.09);border-radius:22px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 14px 50px rgba(0,0,0,.28);position:sticky;top:10px;z-index:10}.logo{font-size:28px;font-weight:850;letter-spacing:.6px}.status{font-size:12px;color:#86efac;font-weight:800;letter-spacing:.5px;display:flex;align-items:center;gap:7px}.status:before{content:"";width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 12px rgba(74,222,128,.8)}.chat{flex:1;overflow-y:auto;padding:8px 4px 22px;scroll-behavior:smooth}#welcome{text-align:center;margin:42px auto 28px;max-width:760px;padding:34px 25px;background:linear-gradient(145deg,rgba(30,41,59,.72),rgba(15,23,42,.45));border:1px solid rgba(255,255,255,.08);border-radius:28px;box-shadow:0 20px 70px rgba(0,0,0,.28);font-size:17px;line-height:1.75}#welcome::first-line{font-size:29px;font-weight:850}.message{max-width:82%;padding:14px 17px;margin:9px 0;border-radius:19px;white-space:pre-wrap;line-height:1.58;animation:messageIn .22s ease;box-shadow:0 8px 28px rgba(0,0,0,.12)}@keyframes messageIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}.user{margin-left:auto;background:linear-gradient(135deg,#2563eb,#7c3aed);border:1px solid rgba(255,255,255,.08)}.assistant{background:rgba(15,23,42,.86);border:1px solid rgba(255,255,255,.075)}.thinking{opacity:.72}.controls{display:flex;gap:8px;margin-bottom:9px;flex-wrap:wrap}select,.control{background:rgba(15,23,42,.88);color:#f8fafc;border:1px solid rgba(255,255,255,.10);border-radius:13px;padding:9px 11px;outline:none}.control{cursor:pointer;transition:transform .18s ease,border-color .18s ease,background .18s ease}.control:hover{transform:translateY(-1px);border-color:rgba(129,140,248,.55);background:rgba(30,41,59,.95)}.file-panel,.vision-panel{display:flex;gap:9px;align-items:center;margin-bottom:9px;flex-wrap:wrap;padding:10px 12px;background:rgba(15,23,42,.55);border:1px solid rgba(255,255,255,.065);border-radius:15px}.file-input,.vision-input{max-width:100%;color:#cbd5e1;font-size:13px}.file-name,.vision-name{font-size:12px;opacity:.76}.input-area{display:flex;gap:9px;padding-top:3px}#messageInput{flex:1;min-width:0;padding:15px 17px;background:rgba(15,23,42,.94);color:white;border:1px solid rgba(255,255,255,.11);border-radius:17px;outline:none;font-size:15px;box-shadow:0 10px 35px rgba(0,0,0,.16)}#messageInput::placeholder{color:#94a3b8}#messageInput:focus{border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.13),0 10px 35px rgba(0,0,0,.18)}#sendButton{min-width:82px;padding:0 21px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:white;border:0;border-radius:17px;cursor:pointer;font-weight:800;font-size:14px;transition:transform .18s ease,filter .18s ease;box-shadow:0 10px 30px rgba(79,70,229,.24)}#sendButton:hover{transform:translateY(-1px);filter:brightness(1.08)}#sendButton:disabled{opacity:.55;cursor:not-allowed;transform:none}.message a{color:#93c5fd;text-decoration:underline;word-break:break-all}.search-badge{display:inline-block;font-size:11px;padding:3px 7px;border:1px solid #3b4d73;border-radius:999px;opacity:.8;margin-bottom:5px}.small{text-align:center;opacity:.48;font-size:11px;margin-top:11px;padding-bottom:3px}@media(max-width:650px){.container{padding:9px}.header{padding:14px 15px;border-radius:18px;top:5px}.logo{font-size:23px}.status{font-size:10px}#welcome{margin:24px auto 20px;padding:27px 17px;border-radius:23px;font-size:14px}#welcome::first-line{font-size:23px}.message{max-width:93%;font-size:14px;padding:12px 14px}.controls{gap:6px}select,.control{font-size:12px;padding:8px 9px}.input-area{position:sticky;bottom:0;padding:8px 0;background:#05070d}#messageInput{font-size:14px;padding:13px}#sendButton{min-width:67px;padding:0 14px}.file-panel,.vision-panel{padding:8px}.small{font-size:10px}}
 </style>
 </head>
 
@@ -761,15 +612,11 @@ select,
 <button class="control" onclick="clearDocument()">Remove document</button>
 </div>
 
-<div class="file-panel">
-<input id="imageInput" class="file-input" type="file"
-       accept=".png,.jpg,.jpeg,.webp">
-
-<span id="imageName" class="file-name">No image selected</span>
-
-<button class="control" onclick="analyzeImage()">
-🖼️ Analyze Image
-</button>
+<div class="vision-panel">
+<input id="visionInput" class="vision-input" type="file"
+       accept="image/png,image/jpeg,image/webp">
+<span id="visionName" class="vision-name">No image selected</span>
+<button class="control" onclick="clearVision()">Remove image</button>
 </div>
 
 <div class="input-area">
@@ -794,6 +641,7 @@ RAIZEN â¢ Created and developed by Raihan Kausar
 let chatHistory = [];
 let documentText = "";
 let documentName = "";
+let visionFile = null;
 
 document.getElementById("fileInput").addEventListener("change", async function() {
     const file = this.files[0];
@@ -808,8 +656,6 @@ document.getElementById("fileInput").addEventListener("change", async function()
 
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("question", question);
-    
     document.getElementById("fileName").textContent = "Reading " + file.name + "...";
 
     try {
@@ -841,6 +687,65 @@ function clearDocument() {
     documentName = "";
     document.getElementById("fileInput").value = "";
     document.getElementById("fileName").textContent = "No document selected";
+}
+
+document.getElementById("visionInput").addEventListener("change", function() {
+    const file = this.files[0];
+    if (!file) return;
+
+    const allowed = ["image/png", "image/jpeg", "image/webp"];
+    if (!allowed.includes(file.type)) {
+        displayMessage(
+            "assistant",
+            "â ï¸ Please select a PNG, JPG/JPEG, or WEBP image."
+        );
+        this.value = "";
+        return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+        displayMessage(
+            "assistant",
+            "â ï¸ Image is too large. Maximum size is 8 MB."
+        );
+        this.value = "";
+        return;
+    }
+
+    visionFile = file;
+    document.getElementById("visionName").textContent =
+        "ð¼ï¸ " + file.name + " ready";
+
+    displayMessage(
+        "assistant",
+        "ð¼ï¸ " + file.name +
+        " is ready. Ask me to describe it, read text from it, or explain what is shown."
+    );
+});
+
+function clearVision() {
+    visionFile = null;
+    document.getElementById("visionInput").value = "";
+    document.getElementById("visionName").textContent = "No image selected";
+}
+
+async function sendVisionMessage(question) {
+    const formData = new FormData();
+    formData.append("file", visionFile);
+    formData.append("question", question);
+
+    const response = await fetch("/vision", {
+        method: "POST",
+        body: formData
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || data.error) {
+        throw new Error(data.error || "Vision request failed.");
+    }
+
+    return data.reply;
 }
 
 function saveHistory() {
@@ -892,56 +797,6 @@ function displayMessage(role, text, extraClass) {
     return div;
 }
 
-async function analyzeImage() {
-    const input = document.getElementById("imageInput");
-    const messageInput = document.getElementById("messageInput");
-
-    if (!input.files.length) {
-        alert("Please select an image first.");
-        return;
-    }
-
-    const file = input.files[0];
-
-    if (file.size > 8 * 1024 * 1024) {
-        alert("Image must be smaller than 8 MB.");
-        return;
-    }
-
-    const allowed = ["image/png", "image/jpeg", "image/webp"];
-
-    if (!allowed.includes(file.type)) {
-        alert("Please upload PNG, JPG, JPEG, or WEBP.");
-        return;
-    }
-
-    displayMessage("You", "🖼️ Analyzing image...");
-
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append(
-        "message",
-        messageInput.value.trim() || "Describe this image."
-    );
-
-    try {
-        const response = await fetch("/vision", {
-            method: "POST",
-            body: formData
-        });
-
-        const data = await response.json();
-
-        displayMessage("RAIZEN", data.reply);
-
-    } catch (error) {
-        displayMessage(
-            "RAIZEN",
-            "⚠️ I couldn't analyze the image right now."
-        );
-    }
-}
-
 async function sendMessage() {
     const input = document.getElementById("messageInput");
     const button = document.getElementById("sendButton");
@@ -963,11 +818,30 @@ async function sendMessage() {
 
     const thinking = displayMessage(
         "assistant",
-        "â¡ RAIZEN is thinking...",
+        visionFile
+            ? "ðï¸ RAIZEN is analyzing the image..."
+            : "â¡ RAIZEN is thinking...",
         "thinking"
     );
 
     try {
+        if (visionFile) {
+            const reply = await sendVisionMessage(message);
+
+            thinking.remove();
+            displayMessage("assistant", reply);
+
+            chatHistory.push({
+                role: "assistant",
+                content: reply
+            });
+
+            saveHistory();
+            button.disabled = false;
+            input.focus();
+            return;
+        }
+
         const response = await fetch("/chat", {
             method: "POST",
             headers: {
@@ -1085,79 +959,6 @@ try {
 @app.get("/", response_class=HTMLResponse)
 async def home():
     return HTMLResponse(content=HTML)
-    
-@app.post("/vision")
-async def vision(
-    file: UploadFile = File(...),
-    message: str = Form("Describe this image.")
-):
-    filename = file.filename or "image"
-
-    allowed_types = {
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".webp": "image/webp"
-    }
-
-    extension = os.path.splitext(filename.lower())[1]
-
-    if extension not in allowed_types:
-        return {
-            "reply": "⚠️ Please upload a PNG, JPG, JPEG, or WEBP image."
-        }
-
-    try:
-        raw_bytes = await file.read()
-
-        if len(raw_bytes) > 8 * 1024 * 1024:
-            return {
-                "reply": "⚠️ Image is too large. Maximum size is 8 MB."
-            }
-
-        mime_type = allowed_types[extension]
-
-        image_base64 = base64.b64encode(raw_bytes).decode("utf-8")
-
-        data_url = f"data:{mime_type};base64,{image_base64}"
-
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": data_url
-                        }
-                    },
-                    {
-                        "type": "text",
-                        "text": message
-                    }
-                ]
-            }
-        ]
-
-        response = vision_client.chat.completions.create(
-            model=VISION_MODEL,
-            messages=messages,
-            max_tokens=700
-        )
-
-        reply = response.choices[0].message.content
-
-        if not reply:
-            reply = "Sorry, I could not understand the image."
-
-        return {"reply": reply}
-
-    except Exception as error:
-        print("VISION ERROR:", error)
-
-        return {
-            "error": "VISION ERROR: " + repr(error)
-        }
 
 
 
@@ -1184,6 +985,88 @@ async def upload_file(file: UploadFile = File(...)):
     except Exception as error:
         print("FILE ERROR:", error)
         return {"error": "Could not read this document."}
+
+
+@app.post("/vision")
+async def vision(file: UploadFile = File(...), question: str = ""):
+    filename = file.filename or "image"
+    content_type = file.content_type or ""
+
+    allowed_types = {
+        "image/png": "png",
+        "image/jpeg": "jpeg",
+        "image/webp": "webp"
+    }
+
+    if content_type not in allowed_types:
+        return {
+            "error": "Unsupported image type. Please use PNG, JPG/JPEG, or WEBP."
+        }
+
+    try:
+        raw_bytes = await file.read()
+
+        if len(raw_bytes) > 8 * 1024 * 1024:
+            return {"error": "Image is too large. Maximum size is 8 MB."}
+
+        encoded = base64.b64encode(raw_bytes).decode("utf-8")
+        data_url = f"data:{content_type};base64,{encoded}"
+
+        user_question = question.strip()
+        if not user_question:
+            user_question = (
+                "Describe this image clearly. Mention important visible details "
+                "and read any clearly visible text when possible."
+            )
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are RAIZEN's vision assistant. Analyze the supplied image "
+                    "carefully. Be accurate, concise, and do not invent details. "
+                    "If text is blurry or unreadable, say so."
+                )
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": data_url}
+                    },
+                    {
+                        "type": "text",
+                        "text": user_question
+                    }
+                ]
+            }
+        ]
+
+        response = vision_client.chat.completions.create(
+            model=VISION_MODEL,
+            messages=messages,
+            max_tokens=600
+        )
+
+        reply = response.choices[0].message.content
+
+        if not reply:
+            return {"error": "The vision model returned an empty response."}
+
+        return {
+            "reply": reply,
+            "model": VISION_MODEL
+        }
+
+    except Exception as error:
+        print("VISION ERROR:", error)
+        return {
+            "error": (
+                "Vision is temporarily unavailable. "
+                "Please try the image again."
+            )
+        }
 
 
 @app.post("/chat")
@@ -1344,5 +1227,7 @@ async def health():
         "status": "ok",
         "token_loaded": bool(HF_TOKEN),
         "model": MODEL,
+        "vision_model": VISION_MODEL,
+        "vision": True,
         "live_search": True
     }
