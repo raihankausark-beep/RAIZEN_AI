@@ -5,6 +5,7 @@ import base64
 from datetime import datetime, timezone
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+from io import BytesIO
 import xml.etree.ElementTree as ET
 
 from fastapi import FastAPI, UploadFile, File
@@ -30,6 +31,10 @@ vision_client = InferenceClient(
     provider="novita",
     api_key=HF_TOKEN
 )
+
+IMAGE_MODEL = "black-forest-labs/FLUX.1-schnell"
+
+image_client = InferenceClient(api_key=HF_TOKEN)
 
 
 class ChatRequest(BaseModel):
@@ -339,10 +344,10 @@ def weather_open_meteo(city):
             + "\n"
             + "Temperature: "
             + str(current.get("temperature_2m"))
-            + "Â°C\n"
+            + "°C\n"
             + "Feels like: "
             + str(current.get("apparent_temperature"))
-            + "Â°C\n"
+            + "°C\n"
             + "Humidity: "
             + str(current.get("relative_humidity_2m"))
             + "%\n"
@@ -443,7 +448,7 @@ def weather_met_norway(city):
             + "\n\n"
             + "Condition: " + condition
             + "\n"
-            + "Temperature: " + str(temperature) + "Â°C\n"
+            + "Temperature: " + str(temperature) + "°C\n"
             + "Humidity: " + str(humidity) + "%\n"
             + "Precipitation: " + str(precipitation) + " mm\n"
             + "Wind speed: " + str(wind_speed) + " m/s\n\n"
@@ -584,35 +589,35 @@ HTML = r"""
 <div class="container">
 
 <div class="header">
-<div class="logo">â¡ RAIZEN</div>
+<div class="logo">⚡ RAIZEN</div>
 <div class="header-actions">
-<button class="history-btn" onclick="toggleHistory()">â° History</button>
+<button class="history-btn" onclick="toggleHistory()">☰ History</button>
 <div class="status">AI ONLINE</div>
 </div>
 </div>
 
 <div id="historyDrawer" class="history-drawer">
-<div class="history-top"><strong>Chat History</strong><button onclick="toggleHistory()">â</button></div>
-<button class="new-chat-history" onclick="newChat()">ï¼ New Chat</button>
+<div class="history-top"><strong>Chat History</strong><button onclick="toggleHistory()">✕</button></div>
+<button class="new-chat-history" onclick="newChat()">＋ New Chat</button>
 <div id="historyList"></div>
-<button class="clear-history-btn" onclick="clearAllHistory()">ðï¸ Clear History</button>
+<button class="clear-history-btn" onclick="clearAllHistory()">🗑️ Clear History</button>
 </div>
 
 <div id="chat" class="chat">
 <div class="hero" id="heroPanel">
 <div class="hero-kicker">Your personal AI assistant</div>
-<div class="hero-title">Meet RAIZEN â¡</div>
-<div class="hero-subtitle">Chat, analyze images, understand your files, search the web and check the weather â all in one place.</div>
+<div class="hero-title">Meet RAIZEN ⚡</div>
+<div class="hero-subtitle">Chat, analyze images, understand your files, search the web and check the weather — all in one place.</div>
 <div class="prompt-grid">
-<button class="prompt-card" onclick="usePrompt('Explain artificial intelligence simply')"><strong>ð¬ Chat</strong>Ask anything</button>
-<button class="prompt-card" onclick="usePrompt('What can you tell me about this image?')"><strong>ðï¸ Vision</strong>Analyze an image</button>
-<button class="prompt-card" onclick="usePrompt('Summarize my uploaded document')"><strong>ð Files</strong>Ask about a file</button>
-<button class="prompt-card" onclick="usePrompt('Search the latest AI news')"><strong>ð Web</strong>Search the internet</button>
-<button class="prompt-card" onclick="usePrompt('What is the weather in Cuttack today?')"><strong>ð¤ï¸ Weather</strong>Check conditions</button>
-<button class="prompt-card" onclick="usePrompt('Tell me what you remember from this conversation')"><strong>ð§  Memory</strong>Use chat context</button>
+<button class="prompt-card" onclick="usePrompt('Explain artificial intelligence simply')"><strong>💬 Chat</strong>Ask anything</button>
+<button class="prompt-card" onclick="usePrompt('What can you tell me about this image?')"><strong>👁️ Vision</strong>Analyze an image</button>
+<button class="prompt-card" onclick="usePrompt('Summarize my uploaded document')"><strong>📄 Files</strong>Ask about a file</button>
+<button class="prompt-card" onclick="usePrompt('Search the latest AI news')"><strong>🌐 Web</strong>Search the internet</button>
+<button class="prompt-card" onclick="usePrompt('What is the weather in Cuttack today?')"><strong>🌤️ Weather</strong>Check conditions</button>
+<button class="prompt-card" onclick="usePrompt('Tell me what you remember from this conversation')"><strong>🧠 Memory</strong>Use chat context</button>
 </div>
 </div>
-<div id="welcome" class="assistant message">â¡ Welcome to RAIZEN. Ask me anything.</div>
+<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>
 </div>
 
 <div class="controls">
@@ -632,6 +637,7 @@ HTML = r"""
 
 <button class="control" onclick="newChat()">New Chat</button>
 <button class="control" onclick="clearChat()">Clear Chat</button>
+<button class="control" onclick="generateImageFromInput()">🎨 Create Image</button>
 
 </div>
 
@@ -661,7 +667,7 @@ autocomplete="off"
 </div>
 
 <div class="small">
-RAIZEN â¢ Created and developed by Raihan Kausar
+RAIZEN • Created and developed by Raihan Kausar
 </div>
 
 </div>
@@ -680,7 +686,7 @@ document.getElementById("fileInput").addEventListener("change", async function()
 
     const lower = file.name.toLowerCase();
     if (![".pdf", ".docx", ".txt"].some(ext => lower.endsWith(ext))) {
-        displayMessage("assistant", "â ï¸ Please upload a PDF, DOCX, or TXT file.");
+        displayMessage("assistant", "⚠️ Please upload a PDF, DOCX, or TXT file.");
         this.value = "";
         return;
     }
@@ -699,17 +705,17 @@ document.getElementById("fileInput").addEventListener("change", async function()
 
         documentText = data.text || "";
         documentName = data.filename || file.name;
-        document.getElementById("fileName").textContent = "ð " + documentName + " ready";
+        document.getElementById("fileName").textContent = "📄 " + documentName + " ready";
 
         displayMessage("assistant",
-            "ð " + documentName +
+            "📄 " + documentName +
             " is ready. Ask me to summarize it, explain it, find important points, or create questions from it."
         );
     } catch (error) {
         documentText = "";
         documentName = "";
         document.getElementById("fileName").textContent = "Upload failed";
-        displayMessage("assistant", "â ï¸ " + error.message);
+        displayMessage("assistant", "⚠️ " + error.message);
     }
 });
 
@@ -728,7 +734,7 @@ document.getElementById("visionInput").addEventListener("change", function() {
     if (!allowed.includes(file.type)) {
         displayMessage(
             "assistant",
-            "â ï¸ Please select a PNG, JPG/JPEG, or WEBP image."
+            "⚠️ Please select a PNG, JPG/JPEG, or WEBP image."
         );
         this.value = "";
         return;
@@ -737,7 +743,7 @@ document.getElementById("visionInput").addEventListener("change", function() {
     if (file.size > 8 * 1024 * 1024) {
         displayMessage(
             "assistant",
-            "â ï¸ Image is too large. Maximum size is 8 MB."
+            "⚠️ Image is too large. Maximum size is 8 MB."
         );
         this.value = "";
         return;
@@ -745,11 +751,11 @@ document.getElementById("visionInput").addEventListener("change", function() {
 
     visionFile = file;
     document.getElementById("visionName").textContent =
-        "ð¼ï¸ " + file.name + " ready";
+        "🖼️ " + file.name + " ready";
 
     displayMessage(
         "assistant",
-        "ð¼ï¸ " + file.name +
+        "🖼️ " + file.name +
         " is ready. Ask me to describe it, read text from it, or explain what is shown."
     );
 });
@@ -830,7 +836,7 @@ function renderHistory() {
         date.textContent = new Date(chat.updatedAt).toLocaleString();
         const del = document.createElement("button");
         del.className = "history-delete";
-        del.textContent = "ð";
+        del.textContent = "🗑";
         del.title = "Delete chat";
         del.onclick = function(e) { e.stopPropagation(); deleteChat(chat.id); };
         item.appendChild(title); item.appendChild(date); item.appendChild(del);
@@ -847,7 +853,7 @@ function openChat(id) {
     const chat = document.getElementById("chat");
     chat.innerHTML = "";
     if (!chatHistory.length) {
-        chat.innerHTML = '<div id="welcome" class="assistant message">â¡ Welcome to RAIZEN. Ask me anything.</div>';
+        chat.innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
     } else {
         chatHistory.forEach(item => displayMessage(item.role, item.content));
     }
@@ -859,7 +865,7 @@ function deleteChat(id) {
     if (currentChatId === id) {
         currentChatId = null;
         chatHistory = [];
-        document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">â¡ Welcome to RAIZEN. Ask me anything.</div>';
+        document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
     }
     saveChats();
     renderHistory();
@@ -880,7 +886,7 @@ function clearAllHistory() {
     chatHistory = [];
     localStorage.removeItem("raizen_saved_chats");
     localStorage.removeItem("raizen_chat_history");
-    document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">â¡ Welcome to RAIZEN. Ask me anything.</div>';
+    document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
     renderHistory();
 }
 
@@ -932,6 +938,97 @@ function usePrompt(text) {
     input.focus();
 }
 
+async function generateImageFromInput() {
+    const input = document.getElementById("messageInput");
+    const button = document.getElementById("sendButton");
+    const prompt = input.value.trim();
+
+    if (!prompt || button.disabled) return;
+
+    input.value = "";
+    button.disabled = true;
+
+    displayMessage("user", prompt);
+
+    const thinking = displayMessage(
+        "assistant",
+        "🎨 RAIZEN is creating your image...",
+        "thinking"
+    );
+
+    try {
+        const response = await fetch("/generate-image", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({prompt: prompt})
+        });
+
+        const data = await response.json();
+
+        thinking.remove();
+
+        if (data.error) {
+            displayMessage("assistant", data.error);
+            chatHistory.push({role: "user", content: prompt});
+            chatHistory.push({role: "assistant", content: data.error});
+        } else {
+            displayGeneratedImage(prompt, data.image);
+            chatHistory.push({role: "user", content: prompt});
+            chatHistory.push({
+                role: "assistant",
+                content: "🎨 Generated an image for: " + prompt
+            });
+        }
+
+        saveCurrentChat();
+    } catch (error) {
+        thinking.remove();
+        const msg = "⚠️ Image generation failed. Please try again.";
+        displayMessage("assistant", msg);
+        chatHistory.push({role: "user", content: prompt});
+        chatHistory.push({role: "assistant", content: msg});
+        saveCurrentChat();
+    }
+
+    button.disabled = false;
+    input.focus();
+}
+
+function displayGeneratedImage(prompt, dataUrl) {
+    const chat = document.getElementById("chat");
+
+    const div = document.createElement("div");
+    div.className = "message assistant";
+
+    const title = document.createElement("div");
+    title.innerHTML = "<strong>🎨 Generated Image</strong><br>" + escapeHtml(prompt);
+
+    const img = document.createElement("img");
+    img.src = dataUrl;
+    img.alt = prompt;
+    img.style.maxWidth = "100%";
+    img.style.width = "768px";
+    img.style.borderRadius = "18px";
+    img.style.marginTop = "12px";
+    img.style.display = "block";
+
+    const download = document.createElement("a");
+    download.href = dataUrl;
+    download.download = "raizen-generated-image.png";
+    download.textContent = "⬇️ Save Image";
+    download.style.display = "inline-block";
+    download.style.marginTop = "10px";
+
+    div.appendChild(title);
+    div.appendChild(img);
+    div.appendChild(download);
+
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+
+    return div;
+}
+
 async function sendMessage() {
     const input = document.getElementById("messageInput");
     const button = document.getElementById("sendButton");
@@ -954,8 +1051,8 @@ async function sendMessage() {
     const thinking = displayMessage(
         "assistant",
         visionFile
-            ? "ðï¸ RAIZEN is analyzing the image..."
-            : "â¡ RAIZEN is thinking...",
+            ? "👁️ RAIZEN is analyzing the image..."
+            : "⚡ RAIZEN is thinking...",
         "thinking"
     );
 
@@ -1018,7 +1115,7 @@ async function sendMessage() {
         thinking.remove();
 
         const reply =
-            "â ï¸ Something went wrong. Please try again.";
+            "⚠️ Something went wrong. Please try again.";
 
         displayMessage("assistant", reply);
 
@@ -1038,14 +1135,14 @@ function clearChat() {
     chatHistory = [];
     currentChatId = null;
     localStorage.removeItem("raizen_chat_history");
-    document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">â¡ Welcome to RAIZEN. Ask me anything.</div>';
+    document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
 }
 
 function newChat() {
     if (chatHistory.length) saveCurrentChat();
     chatHistory = [];
     currentChatId = null;
-    document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">â¡ Welcome to RAIZEN. Ask me anything.</div>';
+    document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
     const drawer = document.getElementById("historyDrawer");
     if (drawer && drawer.classList.contains("open")) drawer.classList.remove("open");
 }
@@ -1228,7 +1325,7 @@ async def chat(request: ChatRequest):
         if not city:
             return {
                 "reply": (
-                    "ð¤ï¸ Please mention a city, "
+                    "🌤️ Please mention a city, "
                     "for example: weather in Cuttack."
                 )
             }
@@ -1240,7 +1337,7 @@ async def chat(request: ChatRequest):
 
         return {
             "reply": (
-                "â ï¸ I couldn't retrieve live weather data right now. "
+                "⚠️ I couldn't retrieve live weather data right now. "
                 "Please try again later."
             )
         }
@@ -1355,9 +1452,50 @@ Uploaded document:
 
         return {
             "reply": (
-                "â ï¸ RAIZEN is temporarily unable to respond. "
+                "⚠️ RAIZEN is temporarily unable to respond. "
                 "Please try again."
             )
+        }
+
+
+class ImageRequest(BaseModel):
+    prompt: str
+    negative_prompt: str = ""
+
+
+@app.post("/generate-image")
+async def generate_image(request: ImageRequest):
+    prompt = request.prompt.strip()
+
+    if not prompt:
+        return {"error": "Please enter an image prompt."}
+
+    if len(prompt) > 1000:
+        return {"error": "Image prompt is too long. Keep it under 1000 characters."}
+
+    try:
+        image = image_client.text_to_image(
+            prompt,
+            model=IMAGE_MODEL,
+            negative_prompt=request.negative_prompt.strip() or None,
+            width=768,
+            height=768,
+            num_inference_steps=4
+        )
+
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+        return {
+            "image": "data:image/png;base64," + encoded,
+            "model": IMAGE_MODEL
+        }
+
+    except Exception as error:
+        print("IMAGE GENERATION ERROR:", error)
+        return {
+            "error": "Image generation is temporarily unavailable. Please try again."
         }
 
 
@@ -1369,5 +1507,7 @@ async def health():
         "model": MODEL,
         "vision_model": VISION_MODEL,
         "vision": True,
-        "live_search": True
+        "live_search": True,
+        "image_generation": True,
+        "image_model": IMAGE_MODEL
     }
