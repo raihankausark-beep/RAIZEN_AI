@@ -572,6 +572,11 @@ HTML = r"""
 *{box-sizing:border-box}html,body{margin:0;padding:0;width:100%;min-height:100%}body{font-family:Arial,Helvetica,sans-serif;color:#f8fafc;background:radial-gradient(circle at 15% 5%,rgba(59,130,246,.22),transparent 28%),radial-gradient(circle at 85% 15%,rgba(139,92,246,.20),transparent 30%),radial-gradient(circle at 50% 100%,rgba(14,165,233,.10),transparent 35%),#05070d}.container{width:min(1120px,100%);min-height:100vh;margin:auto;padding:18px;display:flex;flex-direction:column}.header{padding:17px 20px;background:rgba(15,23,42,.72);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.09);border-radius:22px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 14px 50px rgba(0,0,0,.28);position:sticky;top:10px;z-index:10}.logo{font-size:28px;font-weight:850;letter-spacing:.6px}.status{font-size:12px;color:#86efac;font-weight:800;letter-spacing:.5px;display:flex;align-items:center;gap:7px}.status:before{content:"";width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 12px rgba(74,222,128,.8)}.chat{flex:1;overflow-y:auto;padding:8px 4px 22px;scroll-behavior:smooth}#welcome{text-align:center;margin:42px auto 28px;max-width:760px;padding:34px 25px;background:linear-gradient(145deg,rgba(30,41,59,.72),rgba(15,23,42,.45));border:1px solid rgba(255,255,255,.08);border-radius:28px;box-shadow:0 20px 70px rgba(0,0,0,.28);font-size:17px;line-height:1.75}#welcome::first-line{font-size:29px;font-weight:850}.message{max-width:82%;padding:14px 17px;margin:9px 0;border-radius:19px;white-space:pre-wrap;line-height:1.58;animation:messageIn .22s ease;box-shadow:0 8px 28px rgba(0,0,0,.12)}@keyframes messageIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}.user{margin-left:auto;background:linear-gradient(135deg,#2563eb,#7c3aed);border:1px solid rgba(255,255,255,.08)}.assistant{background:rgba(15,23,42,.86);border:1px solid rgba(255,255,255,.075)}.thinking{opacity:.72}.controls{display:flex;gap:8px;margin-bottom:9px;flex-wrap:wrap}select,.control{background:rgba(15,23,42,.88);color:#f8fafc;border:1px solid rgba(255,255,255,.10);border-radius:13px;padding:9px 11px;outline:none}.control{cursor:pointer;transition:transform .18s ease,border-color .18s ease,background .18s ease}.control:hover{transform:translateY(-1px);border-color:rgba(129,140,248,.55);background:rgba(30,41,59,.95)}.file-panel,.vision-panel{display:flex;gap:9px;align-items:center;margin-bottom:9px;flex-wrap:wrap;padding:10px 12px;background:rgba(15,23,42,.55);border:1px solid rgba(255,255,255,.065);border-radius:15px}.file-input,.vision-input{max-width:100%;color:#cbd5e1;font-size:13px}.file-name,.vision-name{font-size:12px;opacity:.76}.input-area{display:flex;gap:9px;padding-top:3px}#messageInput{flex:1;min-width:0;padding:15px 17px;background:rgba(15,23,42,.94);color:white;border:1px solid rgba(255,255,255,.11);border-radius:17px;outline:none;font-size:15px;box-shadow:0 10px 35px rgba(0,0,0,.16)}#messageInput::placeholder{color:#94a3b8}#messageInput:focus{border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.13),0 10px 35px rgba(0,0,0,.18)}#sendButton{min-width:82px;padding:0 21px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:white;border:0;border-radius:17px;cursor:pointer;font-weight:800;font-size:14px;transition:transform .18s ease,filter .18s ease;box-shadow:0 10px 30px rgba(79,70,229,.24)}#sendButton:hover{transform:translateY(-1px);filter:brightness(1.08)}#sendButton:disabled{opacity:.55;cursor:not-allowed;transform:none}.message a{color:#93c5fd;text-decoration:underline;word-break:break-all}.search-badge{display:inline-block;font-size:11px;padding:3px 7px;border:1px solid #3b4d73;border-radius:999px;opacity:.8;margin-bottom:5px}.small{text-align:center;opacity:.48;font-size:11px;margin-top:11px;padding-bottom:3px}@media(max-width:650px){.container{padding:9px}.header{padding:14px 15px;border-radius:18px;top:5px}.logo{font-size:23px}.status{font-size:10px}#welcome{margin:24px auto 20px;padding:27px 17px;border-radius:23px;font-size:14px}#welcome::first-line{font-size:23px}.message{max-width:93%;font-size:14px;padding:12px 14px}.controls{gap:6px}select,.control{font-size:12px;padding:8px 9px}.input-area{position:sticky;bottom:0;padding:8px 0;background:#05070d}#messageInput{font-size:14px;padding:13px}#sendButton{min-width:67px;padding:0 14px}.file-panel,.vision-panel{padding:8px}.small{font-size:10px}}
 
 .hero{margin:8px auto 18px;max-width:900px;padding:34px 24px 26px;text-align:center;border-radius:30px;background:linear-gradient(145deg,rgba(30,41,59,.78),rgba(15,23,42,.48));border:1px solid rgba(255,255,255,.08);box-shadow:0 20px 80px rgba(0,0,0,.25)}.hero-kicker{font-size:12px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#93c5fd;margin-bottom:10px}.hero-title{font-size:42px;font-weight:900;letter-spacing:-1.2px;margin:0 0 8px}.hero-subtitle{font-size:16px;color:#cbd5e1;margin:0 auto 22px;max-width:600px;line-height:1.6}.prompt-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:780px;margin:auto}.prompt-card{padding:13px 12px;border-radius:16px;background:rgba(2,6,23,.48);border:1px solid rgba(255,255,255,.08);color:#e2e8f0;text-align:left;cursor:pointer;transition:.18s;font-size:13px;line-height:1.4}.prompt-card:hover{transform:translateY(-2px);border-color:rgba(129,140,248,.55);background:rgba(30,41,59,.78)}.prompt-card strong{display:block;color:#fff;margin-bottom:3px}@media(max-width:650px){.hero{padding:27px 15px 20px;border-radius:23px}.hero-title{font-size:31px}.hero-subtitle{font-size:14px}.prompt-grid{grid-template-columns:1fr 1fr;gap:8px}.prompt-card{font-size:12px;padding:11px 10px}}
+
+.history-btn{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:#fff;padding:10px 15px;border-radius:12px;cursor:pointer;font-size:14px}.history-btn:hover{background:rgba(255,255,255,.13)}
+.history-drawer{position:fixed;top:0;right:-380px;width:350px;height:100vh;background:rgba(10,12,18,.98);backdrop-filter:blur(24px);border-left:1px solid rgba(255,255,255,.12);z-index:9999;padding:22px;box-sizing:border-box;transition:right .28s ease;overflow-y:auto;box-shadow:-20px 0 60px rgba(0,0,0,.35)}
+.history-drawer.open{right:0}.history-top{display:flex;align-items:center;justify-content:space-between;color:#fff;font-size:19px;margin-bottom:18px}.history-top button{background:transparent;border:0;color:#fff;font-size:20px;cursor:pointer}.new-chat-history,.clear-history-btn{width:100%;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.07);color:#fff;cursor:pointer;margin-bottom:14px}.new-chat-history:hover,.clear-history-btn:hover{background:rgba(255,255,255,.12)}.history-item{position:relative;padding:13px 42px 13px 13px;margin-bottom:8px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid transparent;color:#fff;cursor:pointer}.history-item:hover{background:rgba(255,255,255,.09);border-color:rgba(255,255,255,.12)}.history-title{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.history-date{font-size:11px;opacity:.5;margin-top:5px}.history-delete{position:absolute;right:10px;top:13px;background:transparent;border:0;color:#aaa;cursor:pointer;font-size:15px}.history-delete:hover{color:#fff}.history-empty{text-align:center;padding:30px 10px;color:rgba(255,255,255,.45);font-size:13px}
+@media(max-width:600px){.history-drawer{width:88%;right:-92%}.history-drawer.open{right:0}}
 </style>
 </head>
 
@@ -580,7 +585,17 @@ HTML = r"""
 
 <div class="header">
 <div class="logo">â¡ RAIZEN</div>
+<div class="header-actions">
+<button class="history-btn" onclick="toggleHistory()">â° History</button>
 <div class="status">AI ONLINE</div>
+</div>
+</div>
+
+<div id="historyDrawer" class="history-drawer">
+<div class="history-top"><strong>Chat History</strong><button onclick="toggleHistory()">â</button></div>
+<button class="new-chat-history" onclick="newChat()">ï¼ New Chat</button>
+<div id="historyList"></div>
+<button class="clear-history-btn" onclick="clearAllHistory()">ðï¸ Clear History</button>
 </div>
 
 <div id="chat" class="chat">
@@ -653,6 +668,8 @@ RAIZEN â¢ Created and developed by Raihan Kausar
 
 <script>
 let chatHistory = [];
+let savedChats = [];
+let currentChatId = null;
 let documentText = "";
 let documentName = "";
 let visionFile = null;
@@ -762,11 +779,109 @@ async function sendVisionMessage(question) {
     return data.reply;
 }
 
-function saveHistory() {
-    localStorage.setItem(
-        "raizen_chat_history",
-        JSON.stringify(chatHistory.slice(-12))
-    );
+function makeChatTitle(messages) {
+    const firstUser = messages.find(m => m.role === "user");
+    if (!firstUser) return "New Chat";
+    let title = String(firstUser.content || "").trim();
+    return title.length > 36 ? title.substring(0, 36) + "..." : title;
+}
+
+function saveChats() {
+    localStorage.setItem("raizen_saved_chats", JSON.stringify(savedChats));
+}
+
+function saveCurrentChat() {
+    if (!chatHistory.length) return;
+    if (!currentChatId) {
+        currentChatId = Date.now().toString() + Math.random().toString(36).slice(2, 8);
+    }
+    const chatData = {
+        id: currentChatId,
+        title: makeChatTitle(chatHistory),
+        messages: chatHistory.slice(-50),
+        updatedAt: Date.now()
+    };
+    const index = savedChats.findIndex(c => c.id === currentChatId);
+    if (index >= 0) savedChats[index] = chatData;
+    else savedChats.unshift(chatData);
+    savedChats.sort((a,b) => b.updatedAt - a.updatedAt);
+    saveChats();
+    localStorage.setItem("raizen_chat_history", JSON.stringify(chatHistory.slice(-12)));
+    renderHistory();
+}
+
+function renderHistory() {
+    const list = document.getElementById("historyList");
+    if (!list) return;
+    list.innerHTML = "";
+    if (!savedChats.length) {
+        list.innerHTML = '<div class="history-empty">No saved chats yet.</div>';
+        return;
+    }
+    savedChats.sort((a,b) => b.updatedAt - a.updatedAt);
+    savedChats.forEach(chat => {
+        const item = document.createElement("div");
+        item.className = "history-item";
+        const title = document.createElement("div");
+        title.className = "history-title";
+        title.textContent = chat.title || "New Chat";
+        const date = document.createElement("div");
+        date.className = "history-date";
+        date.textContent = new Date(chat.updatedAt).toLocaleString();
+        const del = document.createElement("button");
+        del.className = "history-delete";
+        del.textContent = "ð";
+        del.title = "Delete chat";
+        del.onclick = function(e) { e.stopPropagation(); deleteChat(chat.id); };
+        item.appendChild(title); item.appendChild(date); item.appendChild(del);
+        item.onclick = function() { openChat(chat.id); };
+        list.appendChild(item);
+    });
+}
+
+function openChat(id) {
+    const selected = savedChats.find(c => c.id === id);
+    if (!selected) return;
+    currentChatId = selected.id;
+    chatHistory = Array.isArray(selected.messages) ? [...selected.messages] : [];
+    const chat = document.getElementById("chat");
+    chat.innerHTML = "";
+    if (!chatHistory.length) {
+        chat.innerHTML = '<div id="welcome" class="assistant message">â¡ Welcome to RAIZEN. Ask me anything.</div>';
+    } else {
+        chatHistory.forEach(item => displayMessage(item.role, item.content));
+    }
+    toggleHistory();
+}
+
+function deleteChat(id) {
+    savedChats = savedChats.filter(c => c.id !== id);
+    if (currentChatId === id) {
+        currentChatId = null;
+        chatHistory = [];
+        document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">â¡ Welcome to RAIZEN. Ask me anything.</div>';
+    }
+    saveChats();
+    renderHistory();
+}
+
+function toggleHistory() {
+    const drawer = document.getElementById("historyDrawer");
+    if (!drawer) return;
+    drawer.classList.toggle("open");
+    if (drawer.classList.contains("open")) renderHistory();
+}
+
+function clearAllHistory() {
+    if (!savedChats.length) return;
+    if (!confirm("Delete all saved chat history?")) return;
+    savedChats = [];
+    currentChatId = null;
+    chatHistory = [];
+    localStorage.removeItem("raizen_saved_chats");
+    localStorage.removeItem("raizen_chat_history");
+    document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">â¡ Welcome to RAIZEN. Ask me anything.</div>';
+    renderHistory();
 }
 
 function escapeHtml(text) {
@@ -856,7 +971,7 @@ async function sendMessage() {
                 content: reply
             });
 
-            saveHistory();
+            saveCurrentChat();
             button.disabled = false;
             input.focus();
             return;
@@ -897,7 +1012,7 @@ async function sendMessage() {
             content: reply
         });
 
-        saveHistory();
+        saveCurrentChat();
 
     } catch (error) {
         thinking.remove();
@@ -912,7 +1027,7 @@ async function sendMessage() {
             content: reply
         });
 
-        saveHistory();
+        saveCurrentChat();
     }
 
     button.disabled = false;
@@ -921,54 +1036,59 @@ async function sendMessage() {
 
 function clearChat() {
     chatHistory = [];
-
-    localStorage.removeItem(
-        "raizen_chat_history"
-    );
-
-    document.getElementById("chat").innerHTML =
-        '<div id="welcome" class="assistant message">â¡ Welcome to RAIZEN. Ask me anything.</div>';
+    currentChatId = null;
+    localStorage.removeItem("raizen_chat_history");
+    document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">â¡ Welcome to RAIZEN. Ask me anything.</div>';
 }
 
 function newChat() {
-    clearChat();
-}
-
-document.getElementById("messageInput").addEventListener(
-    "keydown",
-    function(event) {
-        if (event.key === "Enter") {
-            event.preventDefault();
-            sendMessage();
-        }
-    }
-);
-
-try {
-    const saved = localStorage.getItem(
-        "raizen_chat_history"
-    );
-
-    if (saved) {
-        chatHistory = JSON.parse(saved);
-
-        const welcome =
-            document.getElementById("welcome");
-
-        if (welcome) {
-            welcome.remove();
-        }
-
-        chatHistory.forEach(function(item) {
-            displayMessage(
-                item.role,
-                item.content
-            );
-        });
-    }
-} catch (error) {
+    if (chatHistory.length) saveCurrentChat();
     chatHistory = [];
+    currentChatId = null;
+    document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">â¡ Welcome to RAIZEN. Ask me anything.</div>';
+    const drawer = document.getElementById("historyDrawer");
+    if (drawer && drawer.classList.contains("open")) drawer.classList.remove("open");
 }
+
+document.getElementById("messageInput").addEventListener("keydown", function(event) {
+    if (event.key === "Enter") { event.preventDefault(); sendMessage(); }
+});
+
+function loadChatHistory() {
+    try {
+        const saved = localStorage.getItem("raizen_saved_chats");
+        savedChats = saved ? JSON.parse(saved) : [];
+        if (!Array.isArray(savedChats)) savedChats = [];
+
+        if (!savedChats.length) {
+            const legacy = localStorage.getItem("raizen_chat_history");
+            if (legacy) {
+                const old = JSON.parse(legacy);
+                if (Array.isArray(old) && old.length) {
+                    savedChats = [{ id: Date.now().toString(), title: makeChatTitle(old), messages: old, updatedAt: Date.now() }];
+                    saveChats();
+                }
+            }
+        }
+
+        if (savedChats.length) {
+            savedChats.sort((a,b) => b.updatedAt - a.updatedAt);
+            const latest = savedChats[0];
+            currentChatId = latest.id;
+            chatHistory = Array.isArray(latest.messages) ? [...latest.messages] : [];
+            const chat = document.getElementById("chat");
+            chat.innerHTML = "";
+            chatHistory.forEach(item => displayMessage(item.role, item.content));
+        }
+    } catch (error) {
+        savedChats = [];
+        chatHistory = [];
+        currentChatId = null;
+    }
+    renderHistory();
+}
+
+loadChatHistory();
 </script>
 
 </body>
