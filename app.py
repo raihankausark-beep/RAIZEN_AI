@@ -876,11 +876,14 @@ async function submitAuth(e){
 
 async function checkLogin(){
   if(!authToken){showLoginScreen();return;}
-  try{const r=await fetch("/auth-check?token="+encodeURIComponent(authToken));const d=await r.json();if(!d.ok)throw new Error();loggedInUsername=d.username;showAppAfterLogin();}catch(e){authToken="";loggedInUsername="";localStorage.removeItem("raizen_auth_token");localStorage.removeItem("raizen_username");showLoginScreen();}
+  try{const r=await fetch("/auth-check?token="+encodeURIComponent(authToken));const d=await r.json();if(!d.ok)throw new Error();loggedInUsername=d.username;localStorage.setItem("raizen_is_creator", d.is_creator ? "true" : "false");showAppAfterLogin();}catch(e){authToken="";loggedInUsername="";localStorage.removeItem("raizen_auth_token");localStorage.removeItem("raizen_username");showLoginScreen();}
 }
 function showLoginScreen(){document.getElementById("authScreen").style.display="flex";document.querySelector(".container").style.display="none";}
-function showAppAfterLogin(){document.getElementById("authScreen").style.display="none";document.querySelector(".container").style.display="flex";document.getElementById("accountPill").textContent="👤 "+loggedInUsername;loadChatHistory();}
-async function logout(){try{if(authToken)await fetch("/logout?token="+encodeURIComponent(authToken),{method:"POST"});}catch(e){} authToken="";loggedInUsername="";localStorage.removeItem("raizen_auth_token");localStorage.removeItem("raizen_username");chatHistory=[];savedChats=[];currentChatId=null;showAuthMode("login");const creatorButton = document.getElementById("creatorBtn");
+function showAppAfterLogin(){document.getElementById("authScreen").style.display="none";document.querySelector(".container").style.display="flex";document.getElementById("accountPill").textContent="👤 "+loggedInUsername;
+  const creatorButton=document.getElementById("creatorBtn");
+  if(creatorButton) creatorButton.style.display = localStorage.getItem("raizen_is_creator")==="true" ? "inline-block" : "none";
+  loadChatHistory();}
+async function logout(){try{if(authToken)await fetch("/logout?token="+encodeURIComponent(authToken),{method:"POST"});}catch(e){} authToken="";loggedInUsername="";localStorage.removeItem("raizen_auth_token");localStorage.removeItem("raizen_username");localStorage.removeItem("raizen_is_creator");chatHistory=[];savedChats=[];currentChatId=null;showAuthMode("login");const creatorButton = document.getElementById("creatorBtn");
     if (creatorButton) creatorButton.style.display = "none";
     document.getElementById("authForm").reset();showLoginScreen();}
 
@@ -1435,7 +1438,7 @@ async def register(request: AuthRequest):
                 )
             conn.commit()
         token = create_auth_token(username)
-        return {"ok": True, "message": "Account created successfully.", "username": username, "token": token}
+        return {"ok": True, "message": "Account created successfully.", "username": username, "token": token, "is_creator": is_creator_username(username)}
     except psycopg.errors.UniqueViolation:
         return {"ok": False, "message": "That username already exists."}
     except Exception as error:
@@ -1459,7 +1462,7 @@ async def login(request: AuthRequest):
             return {"ok": False, "message": "Invalid username or password."}
 
         token = create_auth_token(user["username"])
-        return {"ok": True, "message": "Login successful.", "username": user["username"], "token": token}
+        return {"ok": True, "message": "Login successful.", "username": user["username"], "token": token, "is_creator": is_creator_username(user["username"])}
     except Exception as error:
         print("LOGIN ERROR:", error)
         return {"ok": False, "message": "Account service is temporarily unavailable. Please try again."}
@@ -1512,7 +1515,7 @@ async def creator_dashboard(token: str = ""):
 @app.get("/auth-check")
 async def auth_check(token: str = ""):
     username = get_authenticated_username(token)
-    return {"ok": bool(username), "username": username or ""}
+    return {"ok": bool(username), "username": username or "", "is_creator": is_creator_username(username)}
 
 
 @app.post("/upload")
