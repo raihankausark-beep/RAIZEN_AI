@@ -1718,7 +1718,7 @@ Uploaded document:
         response = client.chat.completions.create(
             model=MODEL,
             messages=messages,
-            max_tokens=500
+            max_tokens=2000
         )
 
         reply = response.choices[0].message.content
