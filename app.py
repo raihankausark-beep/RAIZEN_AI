@@ -1714,13 +1714,6 @@ Uploaded document:
         })
 
     try:
-        creator_note = (
-            "The authenticated user is the verified RAIZEN creator, Raihan Kausar. "
-            "If asked who created or developed you, answer: Raihan Kausar. "
-            if is_creator_username(username) else ""
-        )
-        if creator_note:
-            messages.insert(0, {"role": "system", "content": creator_note})
 
         response = client.chat.completions.create(
             model=MODEL,
