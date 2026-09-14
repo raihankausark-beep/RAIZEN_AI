@@ -24,7 +24,6 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 MODEL = "zai-org/GLM-5.3-Flash"
 
 client = InferenceClient(
-    provider="novita",
     api_key=HF_TOKEN
 )
 
