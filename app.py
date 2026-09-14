@@ -2,13 +2,16 @@ import os
 import json
 import re
 import base64
+import hashlib
+import secrets
+import time
 from datetime import datetime, timezone
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 from io import BytesIO
 import xml.etree.ElementTree as ET
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
@@ -37,7 +40,66 @@ IMAGE_MODEL = "black-forest-labs/FLUX.1-schnell"
 image_client = InferenceClient(api_key=HF_TOKEN)
 
 
+USERS_FILE = "raizen_users.json"
+AUTH_TOKENS = {}
+AUTH_TOKEN_TTL = 60 * 60 * 24 * 7
+
+
+class AuthRequest(BaseModel):
+    username: str
+    password: str
+
+
+def load_users():
+    try:
+        if not os.path.exists(USERS_FILE):
+            return {}
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception as error:
+        print("USER DATABASE READ ERROR:", error)
+        return {}
+
+
+def save_users(users):
+    temp = USERS_FILE + ".tmp"
+    with open(temp, "w", encoding="utf-8") as f:
+        json.dump(users, f, indent=2)
+    os.replace(temp, USERS_FILE)
+
+
+def hash_password(password, salt=None):
+    salt = salt or secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 200_000).hex()
+    return salt, digest
+
+
+def verify_password(password, salt, expected_hash):
+    _, digest = hash_password(password, salt)
+    return secrets.compare_digest(digest, expected_hash)
+
+
+def create_auth_token(username):
+    token = secrets.token_urlsafe(32)
+    AUTH_TOKENS[token] = {"username": username, "expires": time.time() + AUTH_TOKEN_TTL}
+    return token
+
+
+def get_authenticated_username(token):
+    if not token:
+        return None
+    session = AUTH_TOKENS.get(token)
+    if not session:
+        return None
+    if session["expires"] < time.time():
+        AUTH_TOKENS.pop(token, None)
+        return None
+    return session["username"]
+
+
 class ChatRequest(BaseModel):
+    token: str = ""
     message: str
     history: list = []
     personality: str = "Friendly"
@@ -582,16 +644,20 @@ HTML = r"""
 .history-drawer{position:fixed;top:0;right:-380px;width:350px;height:100vh;background:rgba(10,12,18,.98);backdrop-filter:blur(24px);border-left:1px solid rgba(255,255,255,.12);z-index:9999;padding:22px;box-sizing:border-box;transition:right .28s ease;overflow-y:auto;box-shadow:-20px 0 60px rgba(0,0,0,.35)}
 .history-drawer.open{right:0}.history-top{display:flex;align-items:center;justify-content:space-between;color:#fff;font-size:19px;margin-bottom:18px}.history-top button{background:transparent;border:0;color:#fff;font-size:20px;cursor:pointer}.new-chat-history,.clear-history-btn{width:100%;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.07);color:#fff;cursor:pointer;margin-bottom:14px}.new-chat-history:hover,.clear-history-btn:hover{background:rgba(255,255,255,.12)}.history-item{position:relative;padding:13px 42px 13px 13px;margin-bottom:8px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid transparent;color:#fff;cursor:pointer}.history-item:hover{background:rgba(255,255,255,.09);border-color:rgba(255,255,255,.12)}.history-title{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.history-date{font-size:11px;opacity:.5;margin-top:5px}.history-delete{position:absolute;right:10px;top:13px;background:transparent;border:0;color:#aaa;cursor:pointer;font-size:15px}.history-delete:hover{color:#fff}.history-empty{text-align:center;padding:30px 10px;color:rgba(255,255,255,.45);font-size:13px}
 @media(max-width:600px){.history-drawer{width:88%;right:-92%}.history-drawer.open{right:0}}
+.auth-screen{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(circle at 20% 10%,rgba(59,130,246,.22),transparent 32%),radial-gradient(circle at 80% 20%,rgba(124,58,237,.20),transparent 32%),#05070d}.auth-card{width:min(430px,100%);padding:30px;border-radius:26px;background:rgba(15,23,42,.96);border:1px solid rgba(255,255,255,.1);box-shadow:0 30px 100px rgba(0,0,0,.55);text-align:center}.auth-logo{font-size:34px;font-weight:900}.auth-sub{font-size:13px;color:#94a3b8;margin:6px 0 22px}.auth-tabs{display:flex;gap:8px;margin-bottom:18px}.auth-tab{flex:1;padding:11px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.05);color:#cbd5e1;cursor:pointer;font-weight:700}.auth-tab.active{background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border-color:transparent}.auth-form{display:flex;flex-direction:column;gap:10px}.auth-form input{width:100%;box-sizing:border-box;padding:13px 14px;border-radius:13px;border:1px solid rgba(255,255,255,.11);background:rgba(2,6,23,.72);color:#fff;outline:none;font-size:14px}.auth-form input:focus{border-color:#6366f1}.auth-submit{padding:13px;border:0;border-radius:13px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:800;cursor:pointer}.auth-message{min-height:20px;margin-top:10px;font-size:12px;color:#fca5a5}.auth-message.success{color:#86efac}.account-pill{font-size:12px;color:#cbd5e1;padding:8px 10px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.05)}.logout-btn{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.28);color:#fecaca;padding:9px 12px;border-radius:11px;cursor:pointer;font-size:12px;font-weight:700}.container{display:none}
 </style>
 </head>
 
 <body>
+<div id="authScreen" class="auth-screen"><div class="auth-card"><div class="auth-logo">⚡ RAIZEN</div><div class="auth-sub">Your personal AI assistant</div><div class="auth-tabs"><button id="loginTab" class="auth-tab active" onclick="showAuthMode('login')">Login</button><button id="registerTab" class="auth-tab" onclick="showAuthMode('register')">Create Account</button></div><form id="authForm" class="auth-form" onsubmit="submitAuth(event)"><input id="authUsername" type="text" maxlength="20" placeholder="Username" autocomplete="username" required><input id="authPassword" type="password" placeholder="Password" required><input id="authConfirm" type="password" placeholder="Confirm password" style="display:none"><button id="authSubmit" class="auth-submit" type="submit">Login</button></form><div id="authMessage" class="auth-message"></div></div></div>
 <div class="container">
 
 <div class="header">
 <div class="logo">⚡ RAIZEN</div>
 <div class="header-actions">
 <button class="history-btn" onclick="toggleHistory()">☰ History</button>
+<span id="accountPill" class="account-pill">Guest</span>
+<button class="logout-btn" onclick="logout()">Logout</button>
 <div class="status">AI ONLINE</div>
 </div>
 </div>
@@ -673,6 +739,45 @@ RAIZEN • Created and developed by Raihan Kausar
 </div>
 
 <script>
+let authToken = localStorage.getItem("raizen_auth_token") || "";
+let loggedInUsername = localStorage.getItem("raizen_username") || "";
+let authMode = "login";
+
+function showAuthMode(mode){
+  authMode=mode;
+  document.getElementById("loginTab").classList.toggle("active",mode==="login");
+  document.getElementById("registerTab").classList.toggle("active",mode==="register");
+  document.getElementById("authConfirm").style.display=mode==="register"?"block":"none";
+  document.getElementById("authSubmit").textContent=mode==="register"?"Create Account":"Login";
+  document.getElementById("authMessage").textContent="";
+}
+
+async function submitAuth(e){
+  e.preventDefault();
+  const username=document.getElementById("authUsername").value.trim();
+  const password=document.getElementById("authPassword").value;
+  const confirm=document.getElementById("authConfirm").value;
+  const msg=document.getElementById("authMessage");
+  if(authMode==="register" && password!==confirm){msg.textContent="⚠️ Passwords do not match.";return;}
+  try{
+    const r=await fetch(authMode==="register"?"/register":"/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});
+    const d=await r.json();
+    if(!r.ok||!d.ok) throw new Error(d.message||"Authentication failed.");
+    authToken=d.token; loggedInUsername=d.username;
+    localStorage.setItem("raizen_auth_token",authToken); localStorage.setItem("raizen_username",loggedInUsername);
+    msg.textContent="✓ "+d.message; msg.className="auth-message success";
+    setTimeout(showAppAfterLogin,250);
+  }catch(err){msg.textContent="⚠️ "+err.message;msg.className="auth-message";}
+}
+
+async function checkLogin(){
+  if(!authToken){showLoginScreen();return;}
+  try{const r=await fetch("/auth-check?token="+encodeURIComponent(authToken));const d=await r.json();if(!d.ok)throw new Error();loggedInUsername=d.username;showAppAfterLogin();}catch(e){authToken="";loggedInUsername="";localStorage.removeItem("raizen_auth_token");localStorage.removeItem("raizen_username");showLoginScreen();}
+}
+function showLoginScreen(){document.getElementById("authScreen").style.display="flex";document.querySelector(".container").style.display="none";}
+function showAppAfterLogin(){document.getElementById("authScreen").style.display="none";document.querySelector(".container").style.display="flex";document.getElementById("accountPill").textContent="👤 "+loggedInUsername;loadChatHistory();}
+async function logout(){try{if(authToken)await fetch("/logout?token="+encodeURIComponent(authToken),{method:"POST"});}catch(e){} authToken="";loggedInUsername="";localStorage.removeItem("raizen_auth_token");localStorage.removeItem("raizen_username");chatHistory=[];savedChats=[];currentChatId=null;showAuthMode("login");document.getElementById("authForm").reset();showLoginScreen();}
+
 let chatHistory = [];
 let savedChats = [];
 let currentChatId = null;
@@ -693,6 +798,7 @@ document.getElementById("fileInput").addEventListener("change", async function()
 
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("token", authToken);
     document.getElementById("fileName").textContent = "Reading " + file.name + "...";
 
     try {
@@ -770,6 +876,7 @@ async function sendVisionMessage(question) {
     const formData = new FormData();
     formData.append("file", visionFile);
     formData.append("question", question);
+    formData.append("token", authToken);
 
     const response = await fetch("/vision", {
         method: "POST",
@@ -793,7 +900,7 @@ function makeChatTitle(messages) {
 }
 
 function saveChats() {
-    localStorage.setItem("raizen_saved_chats", JSON.stringify(savedChats));
+    localStorage.setItem("raizen_saved_chats_" + loggedInUsername.toLowerCase(), JSON.stringify(savedChats));
 }
 
 function saveCurrentChat() {
@@ -812,7 +919,7 @@ function saveCurrentChat() {
     else savedChats.unshift(chatData);
     savedChats.sort((a,b) => b.updatedAt - a.updatedAt);
     saveChats();
-    localStorage.setItem("raizen_chat_history", JSON.stringify(chatHistory.slice(-12)));
+    localStorage.setItem("raizen_chat_history_" + loggedInUsername.toLowerCase(), JSON.stringify(chatHistory.slice(-12)));
     renderHistory();
 }
 
@@ -884,8 +991,8 @@ function clearAllHistory() {
     savedChats = [];
     currentChatId = null;
     chatHistory = [];
-    localStorage.removeItem("raizen_saved_chats");
-    localStorage.removeItem("raizen_chat_history");
+    localStorage.removeItem("raizen_saved_chats_" + loggedInUsername.toLowerCase());
+    localStorage.removeItem("raizen_chat_history_" + loggedInUsername.toLowerCase());
     document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
     renderHistory();
 }
@@ -960,7 +1067,7 @@ async function generateImageFromInput() {
         const response = await fetch("/generate-image", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({prompt: prompt})
+            body: JSON.stringify({token: authToken, prompt: prompt})
         });
 
         const data = await response.json();
@@ -1080,6 +1187,7 @@ async function sendMessage() {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
+                token: authToken,
                 message: message,
                 history: chatHistory.slice(-12),
                 personality:
@@ -1134,7 +1242,7 @@ async function sendMessage() {
 function clearChat() {
     chatHistory = [];
     currentChatId = null;
-    localStorage.removeItem("raizen_chat_history");
+    localStorage.removeItem("raizen_chat_history_" + loggedInUsername.toLowerCase());
     document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
 }
 
@@ -1153,12 +1261,12 @@ document.getElementById("messageInput").addEventListener("keydown", function(eve
 
 function loadChatHistory() {
     try {
-        const saved = localStorage.getItem("raizen_saved_chats");
+        const saved = localStorage.getItem("raizen_saved_chats_" + loggedInUsername.toLowerCase());
         savedChats = saved ? JSON.parse(saved) : [];
         if (!Array.isArray(savedChats)) savedChats = [];
 
         if (!savedChats.length) {
-            const legacy = localStorage.getItem("raizen_chat_history");
+            const legacy = localStorage.getItem("raizen_chat_history_" + loggedInUsername.toLowerCase());
             if (legacy) {
                 const old = JSON.parse(legacy);
                 if (Array.isArray(old) && old.length) {
@@ -1185,7 +1293,7 @@ function loadChatHistory() {
     renderHistory();
 }
 
-loadChatHistory();
+checkLogin();
 </script>
 
 </body>
@@ -1199,8 +1307,49 @@ async def home():
 
 
 
+@app.post("/register")
+async def register(request: AuthRequest):
+    username = request.username.strip()
+    if not re.fullmatch(r"[A-Za-z0-9_]{3,20}", username):
+        return {"ok": False, "message": "Username must be 3–20 characters using letters, numbers, or underscore."}
+    if len(request.password) < 8:
+        return {"ok": False, "message": "Password must be at least 8 characters."}
+    users = load_users()
+    key = username.lower()
+    if key in users:
+        return {"ok": False, "message": "That username already exists."}
+    salt, password_hash = hash_password(request.password)
+    users[key] = {"username": username, "salt": salt, "password_hash": password_hash, "created_at": datetime.now(timezone.utc).isoformat()}
+    save_users(users)
+    return {"ok": True, "message": "Account created successfully.", "username": username, "token": create_auth_token(username)}
+
+
+@app.post("/login")
+async def login(request: AuthRequest):
+    username = request.username.strip()
+    user = load_users().get(username.lower())
+    if not user or not verify_password(request.password, user.get("salt", ""), user.get("password_hash", "")):
+        return {"ok": False, "message": "Invalid username or password."}
+    return {"ok": True, "message": "Login successful.", "username": user["username"], "token": create_auth_token(user["username"])}
+
+
+@app.post("/logout")
+async def logout(token: str = ""):
+    if token:
+        AUTH_TOKENS.pop(token, None)
+    return {"ok": True}
+
+
+@app.get("/auth-check")
+async def auth_check(token: str = ""):
+    username = get_authenticated_username(token)
+    return {"ok": bool(username), "username": username or ""}
+
+
 @app.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(file: UploadFile = File(...), token: str = Form("")):
+    if not get_authenticated_username(token):
+        return {"error": "Please log in to upload documents."}
     filename = file.filename or "document"
     if not filename.lower().endswith((".pdf", ".docx", ".txt")):
         return {"error": "Unsupported file type. Please upload PDF, DOCX, or TXT."}
@@ -1225,7 +1374,9 @@ async def upload_file(file: UploadFile = File(...)):
 
 
 @app.post("/vision")
-async def vision(file: UploadFile = File(...), question: str = ""):
+async def vision(file: UploadFile = File(...), question: str = Form(""), token: str = Form("")):
+    if not get_authenticated_username(token):
+        return {"error": "Please log in to use Vision."}
     filename = file.filename or "image"
     content_type = file.content_type or ""
 
@@ -1308,6 +1459,9 @@ async def vision(file: UploadFile = File(...), question: str = ""):
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
+    username = get_authenticated_username(request.token)
+    if not username:
+        return {"reply": "🔐 Please log in to use RAIZEN."}
     message = request.message.strip()
 
     if not message:
@@ -1459,12 +1613,15 @@ Uploaded document:
 
 
 class ImageRequest(BaseModel):
+    token: str = ""
     prompt: str
     negative_prompt: str = ""
 
 
 @app.post("/generate-image")
 async def generate_image(request: ImageRequest):
+    if not get_authenticated_username(request.token):
+        return {"error": "Please log in to create images."}
     prompt = request.prompt.strip()
 
     if not prompt:
