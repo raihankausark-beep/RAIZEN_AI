@@ -35,6 +35,11 @@ IMAGE_MODEL = "black-forest-labs/FLUX.1-schnell"
 
 image_client = InferenceClient(api_key=HF_TOKEN)
 
+# Phase 1 reliability / response upgrade
+CHAT_MAX_TOKENS = 2000
+CHAT_MAX_RETRIES = 3
+CHAT_RETRY_DELAYS = (1, 2, 4)
+
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 AUTH_TOKEN_TTL = 60 * 60 * 24 * 7
@@ -1713,30 +1718,42 @@ Uploaded document:
             "content": message
         })
 
-    try:
+    last_error = None
 
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=messages,
-            max_tokens=2000
-        )
-
-        reply = response.choices[0].message.content
-
-        if not reply:
-            reply = "Sorry, I could not generate a response."
-
-        return {"reply": reply}
-
-    except Exception as error:
-        print("RAIZEN ERROR:", error)
-
-        return {
-            "reply": (
-                "⚠️ RAIZEN is temporarily unable to respond. "
-                "Please try again."
+    for attempt in range(CHAT_MAX_RETRIES):
+        try:
+            response = client.chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                max_tokens=CHAT_MAX_TOKENS
             )
-        }
+
+            reply = response.choices[0].message.content
+
+            if not reply:
+                reply = "Sorry, I could not generate a response."
+
+            return {
+                "reply": reply,
+                "model": MODEL
+            }
+
+        except Exception as error:
+            last_error = error
+            print(
+                f"RAIZEN ERROR (attempt {attempt + 1}/{CHAT_MAX_RETRIES}):",
+                error
+            )
+
+            if attempt < CHAT_MAX_RETRIES - 1:
+                time.sleep(CHAT_RETRY_DELAYS[attempt])
+
+    return {
+        "reply": (
+            "⚠️ RAIZEN couldn't complete that request after a few automatic "
+            "retries. Please try again in a moment."
+        )
+    }
 
 
 class ImageRequest(BaseModel):
