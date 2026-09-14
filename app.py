@@ -650,13 +650,30 @@ HTML = r"""
 
 <body>
 <div id="authScreen" class="auth-screen"><div class="auth-card"><div class="auth-logo">⚡ RAIZEN</div><div class="auth-sub">Your personal AI assistant</div><div class="auth-tabs"><button id="loginTab" class="auth-tab active" onclick="showAuthMode('login')">Login</button><button id="registerTab" class="auth-tab" onclick="showAuthMode('register')">Create Account</button></div><form id="authForm" class="auth-form" onsubmit="submitAuth(event)"><input id="authUsername" type="text" maxlength="20" placeholder="Username" autocomplete="username" required><input id="authPassword" type="password" placeholder="Password" required><input id="authConfirm" type="password" placeholder="Confirm password" style="display:none"><button id="authSubmit" class="auth-submit" type="submit">Login</button></form><div id="authMessage" class="auth-message"></div></div></div>
+<div id="creatorDashboard" class="auth-screen" style="display:none;z-index:21000;align-items:flex-start;overflow:auto">
+  <div class="auth-card" style="width:min(720px,100%);text-align:left;margin:30px auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <div>
+        <div class="auth-logo">👑 Creator Dashboard</div>
+        <div class="auth-sub" style="margin-bottom:0">RAIZEN • Raihan Kausar</div>
+      </div>
+      <button class="logout-btn" onclick="closeCreatorDashboard()">Close</button>
+    </div>
+
+    <div id="creatorStats" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:24px 0"></div>
+    <div style="font-weight:800;margin-bottom:10px">Registered Accounts</div>
+    <div id="creatorUsers" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div id="creatorMessage" class="auth-message"></div>
+  </div>
+</div>
+
 <div class="container">
 
 <div class="header">
 <div class="logo">⚡ RAIZEN</div>
 <div class="header-actions">
 <button class="history-btn" onclick="toggleHistory()">☰ History</button>
-<span id="accountPill" class="account-pill">Guest</span>
+<span id="accountPill" class="account-pill">Guest</span><button id="creatorBtn" class="logout-btn" style="display:none;background:rgba(124,58,237,.14);border-color:rgba(124,58,237,.35);color:#ddd6fe" onclick="openCreatorDashboard()">👑 Creator</button>
 <button class="logout-btn" onclick="logout()">Logout</button>
 <div class="status">AI ONLINE</div>
 </div>
@@ -776,7 +793,9 @@ async function checkLogin(){
 }
 function showLoginScreen(){document.getElementById("authScreen").style.display="flex";document.querySelector(".container").style.display="none";}
 function showAppAfterLogin(){document.getElementById("authScreen").style.display="none";document.querySelector(".container").style.display="flex";document.getElementById("accountPill").textContent="👤 "+loggedInUsername;loadChatHistory();}
-async function logout(){try{if(authToken)await fetch("/logout?token="+encodeURIComponent(authToken),{method:"POST"});}catch(e){} authToken="";loggedInUsername="";localStorage.removeItem("raizen_auth_token");localStorage.removeItem("raizen_username");chatHistory=[];savedChats=[];currentChatId=null;showAuthMode("login");document.getElementById("authForm").reset();showLoginScreen();}
+async function logout(){try{if(authToken)await fetch("/logout?token="+encodeURIComponent(authToken),{method:"POST"});}catch(e){} authToken="";loggedInUsername="";localStorage.removeItem("raizen_auth_token");localStorage.removeItem("raizen_username");chatHistory=[];savedChats=[];currentChatId=null;showAuthMode("login");const creatorButton = document.getElementById("creatorBtn");
+    if (creatorButton) creatorButton.style.display = "none";
+    document.getElementById("authForm").reset();showLoginScreen();}
 
 let chatHistory = [];
 let savedChats = [];
@@ -1340,6 +1359,32 @@ async def logout(token: str = ""):
     return {"ok": True}
 
 
+
+@app.get("/creator-dashboard")
+async def creator_dashboard(token: str = ""):
+    username = get_authenticated_username(token)
+    if not username:
+        return {"ok": False, "message": "Authentication required."}
+
+    creator_names = {"raihan", "raihankausar", "raihankausarkausar"}
+    if username.lower() not in creator_names:
+        return {"ok": False, "message": "Creator access denied."}
+
+    users = load_users()
+    return {
+        "ok": True,
+        "creator": "Raihan Kausar",
+        "total_users": len(users),
+        "users": [
+            {
+                "username": user.get("username", ""),
+                "created_at": user.get("created_at", "")
+            }
+            for user in users.values()
+        ]
+    }
+
+
 @app.get("/auth-check")
 async def auth_check(token: str = ""):
     username = get_authenticated_username(token)
@@ -1588,6 +1633,14 @@ Uploaded document:
         })
 
     try:
+        creator_note = (
+            "The authenticated user is the verified RAIZEN creator, Raihan Kausar. "
+            "If asked who created or developed you, answer: Raihan Kausar. "
+            if is_creator_username(username) else ""
+        )
+        if creator_note:
+            messages.insert(0, {"role": "system", "content": creator_note})
+
         response = client.chat.completions.create(
             model=MODEL,
             messages=messages,
