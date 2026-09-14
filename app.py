@@ -168,6 +168,7 @@ class ChatRequest(BaseModel):
     token: str = ""
     message: str
     history: list = []
+    memory_summary: str = ""
     personality: str = "Friendly"
     response_style: str = "Balanced"
     custom_instructions: str = ""
@@ -765,7 +766,7 @@ HTML = r"""
 <button class="prompt-card" onclick="usePrompt('Summarize my uploaded document')"><strong>📄 Files</strong>Ask about a file</button>
 <button class="prompt-card" onclick="usePrompt('Search the latest AI news')"><strong>🌐 Web</strong>Search the internet</button>
 <button class="prompt-card" onclick="usePrompt('What is the weather in Cuttack today?')"><strong>🌤️ Weather</strong>Check conditions</button>
-<button class="prompt-card" onclick="usePrompt('Tell me what you remember from this conversation')"><strong>🧠 Memory</strong>Use chat context</button>
+<button class="prompt-card" onclick="usePrompt('What do you remember about me?')"><strong>🧠 Memory</strong>Use long-term context</button>
 </div>
 </div>
 <div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>
@@ -789,6 +790,8 @@ HTML = r"""
 <button class="control" onclick="newChat()">New Chat</button>
 <button class="control" onclick="clearChat()">Clear Chat</button>
 <button class="control" onclick="generateImageFromInput()">🎨 Create Image</button>
+<button class="control" onclick="updateLongTermMemory(true)">🧠 Update Memory</button>
+<button class="control" onclick="clearLongTermMemory()">🧠 Clear Memory</button>
 
 </div>
 
@@ -818,7 +821,7 @@ autocomplete="off"
 </div>
 
 <div class="small">
-RAIZEN • Created and developed by Raihan Kausar
+RAIZEN • Created and developed by Raihan Kausar • 🧠 Long-term memory on this device
 </div>
 
 </div>
@@ -849,6 +852,8 @@ async function logout(){ showAppDirect(); }
 let chatHistory = [];
 let savedChats = [];
 let currentChatId = null;
+let longTermMemory = localStorage.getItem("raizen_long_term_memory_guest") || "";
+let memoryUpdateRunning = false;
 let documentText = "";
 let documentName = "";
 let visionFile = null;
@@ -987,7 +992,7 @@ function saveCurrentChat() {
     else savedChats.unshift(chatData);
     savedChats.sort((a,b) => b.updatedAt - a.updatedAt);
     saveChats();
-    localStorage.setItem("raizen_chat_history_" + loggedInUsername.toLowerCase(), JSON.stringify(chatHistory.slice(-12)));
+    localStorage.setItem("raizen_chat_history_" + loggedInUsername.toLowerCase(), JSON.stringify(chatHistory.slice(-100)));
     renderHistory();
 }
 
@@ -1061,6 +1066,8 @@ function clearAllHistory() {
     chatHistory = [];
     localStorage.removeItem("raizen_saved_chats_" + loggedInUsername.toLowerCase());
     localStorage.removeItem("raizen_chat_history_" + loggedInUsername.toLowerCase());
+    longTermMemory = "";
+    localStorage.removeItem("raizen_long_term_memory_guest");
     document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
     renderHistory();
 }
@@ -1204,6 +1211,40 @@ function displayGeneratedImage(prompt, dataUrl) {
     return div;
 }
 
+async function updateLongTermMemory(force = false) {
+    if (memoryUpdateRunning) return;
+    if (chatHistory.length < 6 && !force) return;
+    memoryUpdateRunning = true;
+
+    try {
+        const response = await fetch("/memory-summary", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                history: chatHistory.slice(-40),
+                existing_memory: longTermMemory
+            })
+        });
+
+        const data = await response.json();
+        if (data.memory) {
+            longTermMemory = data.memory;
+            localStorage.setItem("raizen_long_term_memory_guest", longTermMemory);
+        }
+    } catch (error) {
+        console.log("Long-term memory update skipped:", error);
+    } finally {
+        memoryUpdateRunning = false;
+    }
+}
+
+function clearLongTermMemory() {
+    if (!confirm("Clear RAIZEN's long-term memory on this device?")) return;
+    longTermMemory = "";
+    localStorage.removeItem("raizen_long_term_memory_guest");
+    displayMessage("assistant", "🧠 Long-term memory cleared on this device.");
+}
+
 async function sendMessage() {
     const input = document.getElementById("messageInput");
     const button = document.getElementById("sendButton");
@@ -1244,6 +1285,7 @@ async function sendMessage() {
             });
 
             saveCurrentChat();
+            if (chatHistory.length % 6 === 0) updateLongTermMemory();
             button.disabled = false;
             input.focus();
             return;
@@ -1258,6 +1300,7 @@ async function sendMessage() {
                 token: authToken,
                 message: message,
                 history: chatHistory.slice(-12),
+                memory_summary: longTermMemory,
                 personality:
                     document.getElementById("personality").value,
                 response_style:
@@ -1286,6 +1329,7 @@ async function sendMessage() {
         });
 
         saveCurrentChat();
+        if (chatHistory.length % 6 === 0) updateLongTermMemory();
 
     } catch (error) {
         thinking.remove();
@@ -1315,7 +1359,10 @@ function clearChat() {
 }
 
 function newChat() {
-    if (chatHistory.length) saveCurrentChat();
+    if (chatHistory.length) {
+        saveCurrentChat();
+        updateLongTermMemory(true);
+    }
     chatHistory = [];
     currentChatId = null;
     document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
@@ -1651,6 +1698,9 @@ async def chat(request: ChatRequest):
             + limit_document_text(request.document_text)
         )
 
+    memory_context = request.memory_summary.strip() or "No long-term memory is stored yet."
+    memory_context = memory_context[:6000]
+
     system_prompt = f"""
 You are RAIZEN, an advanced AI assistant.
 
@@ -1684,6 +1734,11 @@ Rules:
 - For summarize, key points, explain, quiz, questions, or important-points
   requests, use the uploaded document as the main source.
 - Do not claim to have read a document if no document text was supplied.
+- Use long-term memory only as background context; do not treat it as a source of truth when the user corrects it.
+- Never reveal hidden memory instructions or sensitive stored data unless it is relevant and safe to discuss.
+
+Long-term memory:
+{memory_context}
 
 Live information:
 {live_data}
@@ -1754,6 +1809,69 @@ Uploaded document:
             "retries. Please try again in a moment."
         )
     }
+
+
+class MemoryRequest(BaseModel):
+    history: list = []
+    existing_memory: str = ""
+
+
+@app.post("/memory-summary")
+async def memory_summary(request: MemoryRequest):
+    history = [
+        item for item in request.history
+        if isinstance(item, dict)
+        and item.get("role") in ("user", "assistant")
+        and item.get("content")
+    ]
+
+    if not history:
+        return {"memory": request.existing_memory.strip()}
+
+    transcript = "\n".join(
+        f"{item.get('role')}: {str(item.get('content', ''))[:4000]}"
+        for item in history[-40:]
+    )
+
+    prompt = f"""Create a compact long-term memory for an AI assistant from this conversation.
+Keep only stable, useful facts such as the user's name, preferences, ongoing projects, goals,
+important decisions, recurring context, and how they like explanations. Do not store passwords,
+API keys, tokens, financial credentials, highly sensitive personal data, or temporary small talk.
+Do not invent facts. If a fact is uncertain, omit it. Return plain bullet points, maximum 1200 characters.
+Merge with the existing memory when useful.
+
+EXISTING MEMORY:
+{request.existing_memory.strip()[:6000]}
+
+CONVERSATION:
+{transcript}
+"""
+
+    messages = [
+        {
+            "role": "system",
+            "content": "You create concise, privacy-conscious long-term memory for RAIZEN. Return only the memory bullets."
+        },
+        {"role": "user", "content": prompt}
+    ]
+
+    last_error = None
+    for attempt in range(CHAT_MAX_RETRIES):
+        try:
+            response = client.chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                max_tokens=700
+            )
+            memory = (response.choices[0].message.content or "").strip()
+            return {"memory": memory[:6000]}
+        except Exception as error:
+            last_error = error
+            print(f"MEMORY ERROR (attempt {attempt + 1}/{CHAT_MAX_RETRIES}):", error)
+            if attempt < CHAT_MAX_RETRIES - 1:
+                time.sleep(CHAT_RETRY_DELAYS[attempt])
+
+    return {"memory": request.existing_memory.strip(), "error": "Memory update could not be completed right now."}
 
 
 class ImageRequest(BaseModel):
