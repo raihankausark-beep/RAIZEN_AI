@@ -21,6 +21,15 @@ from pypdf import PdfReader
 from docx import Document
 
 app = FastAPI()
+@app.get("/sitemap.xml", response_class=HTMLResponse)
+def sitemap():
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+        <loc>https://raizen-ai.onrender.com/</loc>
+    </url>
+</urlset>"""
+    return HTMLResponse(content=xml, media_type="application/xml")
 
 HF_TOKEN = os.getenv("HF_TOKEN")
 MODEL = "zai-org/GLM-5.3-Flash"
