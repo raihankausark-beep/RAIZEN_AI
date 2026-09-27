@@ -19,8 +19,14 @@ import psycopg
 from psycopg.rows import dict_row
 from pypdf import PdfReader
 from docx import Document
+from fastapi import FastAPI, UploadFile, File, Form, Response
+from fastapi.responses import HTMLResponse
 
 app = FastAPI()
+
+@app.head("/")
+def head_home():
+    return Response(status_code=200)
 @app.get("/sitemap.xml", response_class=HTMLResponse)
 def sitemap():
     xml = """<?xml version="1.0" encoding="UTF-8"?>
