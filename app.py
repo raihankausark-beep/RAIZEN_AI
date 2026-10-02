@@ -12,42 +12,24 @@ from io import BytesIO
 import xml.etree.ElementTree as ET
 
 from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
 import psycopg
 from psycopg.rows import dict_row
 from pypdf import PdfReader
 from docx import Document
-from fastapi import FastAPI, UploadFile, File, Form, Response
-from fastapi.responses import HTMLResponse
 
 app = FastAPI()
-from fastapi.responses import PlainTextResponse
-
-@app.get("/robots.txt", response_class=PlainTextResponse)
-def robots():
-    return """User-agent: *
-Allow: /
-
-Sitemap: https://raizen-ai.onrender.com/sitemap.xml
-"""
-
-@app.head("/")
-def head_home():
-    return Response(status_code=200)
-@app.get("/sitemap.xml", response_class=HTMLResponse)
-def sitemap():
-    xml = """<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-    <url>
-        <loc>https://raizen-ai.onrender.com/</loc>
-    </url>
-</urlset>"""
-    return HTMLResponse(content=xml, media_type="application/xml")
 
 HF_TOKEN = os.getenv("HF_TOKEN")
 MODEL = "zai-org/GLM-5.3-Flash"
+
+MAX_CHAT_OUTPUT_TOKENS = 2000
+MAX_HISTORY_MESSAGES = 30
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+MAX_IMAGE_BYTES = 12 * 1024 * 1024
+MAX_DOCUMENT_CONTEXT_CHARS = 120000
 
 client = InferenceClient(api_key=HF_TOKEN)
 
@@ -58,11 +40,6 @@ vision_client = InferenceClient(api_key=HF_TOKEN)
 IMAGE_MODEL = "black-forest-labs/FLUX.1-schnell"
 
 image_client = InferenceClient(api_key=HF_TOKEN)
-
-# Phase 1 reliability / response upgrade
-CHAT_MAX_TOKENS = 2000
-CHAT_MAX_RETRIES = 3
-CHAT_RETRY_DELAYS = (1, 2, 4)
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -192,7 +169,6 @@ class ChatRequest(BaseModel):
     token: str = ""
     message: str
     history: list = []
-    memory_summary: str = ""
     personality: str = "Friendly"
     response_style: str = "Balanced"
     custom_instructions: str = ""
@@ -246,10 +222,36 @@ def extract_document_text(filename, raw_bytes):
     raise ValueError("Unsupported file type. Use PDF, DOCX, or TXT.")
 
 
-def limit_document_text(text, max_chars=50000):
-    if len(text) <= max_chars:
+def build_document_context(text, question=""):
+    text = (text or "").strip()
+    if not text:
+        return "No document is currently uploaded."
+    if len(text) <= MAX_DOCUMENT_CONTEXT_CHARS:
         return text
-    return text[:max_chars] + "\n\n[Document truncated for processing.]"
+    chunk_size = 7000
+    chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+    q_words = set(re.findall(r"[a-zA-Z0-9]{4,}", question.lower()))
+    scored = []
+    for idx, chunk in enumerate(chunks):
+        words = set(re.findall(r"[a-zA-Z0-9]{4,}", chunk.lower()))
+        scored.append((len(q_words & words), idx, chunk))
+    keep = max(2, MAX_DOCUMENT_CONTEXT_CHARS // chunk_size)
+    selected = {0, len(chunks) - 1}
+    for score, idx, chunk in sorted(scored, reverse=True)[:keep]:
+        selected.add(idx)
+    context = "\n\n--- DOCUMENT SECTION ---\n\n".join(chunks[i] for i in sorted(selected))
+    return context[:MAX_DOCUMENT_CONTEXT_CHARS] + "\n\n[Large document: relevant sections selected automatically.]"
+
+def chat_completion_with_retry(messages, max_tokens):
+    last_error = None
+    for attempt in range(3):
+        try:
+            return client.chat.completions.create(model=MODEL, messages=messages, max_tokens=max_tokens)
+        except Exception as error:
+            last_error = error
+            if attempt < 2:
+                time.sleep(1.2 * (attempt + 1))
+    raise last_error
 
 
 def needs_live_search(message):
@@ -276,7 +278,7 @@ def google_news_search(query):
         root = ET.fromstring(data)
         results = []
 
-        for item in root.findall(".//item")[:5]:
+        for item in root.findall(".//item")[:8]:
             title = item.findtext("title") or ""
             date = item.findtext("pubDate") or ""
             link = item.findtext("link") or ""
@@ -300,7 +302,7 @@ def wikipedia_search(query):
         url = (
             "https://en.wikipedia.org/w/api.php?"
             "action=query&format=json&list=search"
-            "&srsearch=" + quote(query) + "&srlimit=3"
+            "&srsearch=" + quote(query) + "&srlimit=5"
         )
         request = Request(url, headers={"User-Agent": "RAIZEN-AI/1.0"})
 
@@ -724,131 +726,165 @@ HTML = r"""
 <!DOCTYPE html>
 <html>
 <head>
-<meta name="google-site-verification" content="WhBGh8iVPX33XrivJcISQXytsMDUOWUY1nk5eU52NHI" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
 <title>RAIZEN AI</title>
 <style>
-#creatorResetPanel{display:none !important;}
+:root{--bg:#000;--panel:#171717;--panel2:#202020;--text:#f5f5f5;--muted:#9b9b9b;--line:#2b2b2b;--accent:#4d8dff}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;width:100%;height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+body{overflow:hidden}
+button,input,select{font:inherit}
+button{color:inherit}
+.container{display:flex;width:100%;height:100dvh;min-height:100vh;flex-direction:column;background:#000}
 
-*{box-sizing:border-box}html,body{margin:0;padding:0;width:100%;min-height:100%}body{font-family:Arial,Helvetica,sans-serif;color:#f8fafc;background:radial-gradient(circle at 15% 5%,rgba(59,130,246,.22),transparent 28%),radial-gradient(circle at 85% 15%,rgba(139,92,246,.20),transparent 30%),radial-gradient(circle at 50% 100%,rgba(14,165,233,.10),transparent 35%),#05070d}.container{width:min(1120px,100%);min-height:100vh;margin:auto;padding:18px;display:flex;flex-direction:column}.header{padding:17px 20px;background:rgba(15,23,42,.72);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.09);border-radius:22px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 14px 50px rgba(0,0,0,.28);position:sticky;top:10px;z-index:10}.logo{font-size:28px;font-weight:850;letter-spacing:.6px}.status{font-size:12px;color:#86efac;font-weight:800;letter-spacing:.5px;display:flex;align-items:center;gap:7px}.status:before{content:"";width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 12px rgba(74,222,128,.8)}.chat{flex:1;overflow-y:auto;padding:8px 4px 22px;scroll-behavior:smooth}#welcome{text-align:center;margin:42px auto 28px;max-width:760px;padding:34px 25px;background:linear-gradient(145deg,rgba(30,41,59,.72),rgba(15,23,42,.45));border:1px solid rgba(255,255,255,.08);border-radius:28px;box-shadow:0 20px 70px rgba(0,0,0,.28);font-size:17px;line-height:1.75}#welcome::first-line{font-size:29px;font-weight:850}.message{max-width:82%;padding:14px 17px;margin:9px 0;border-radius:19px;white-space:pre-wrap;line-height:1.58;animation:messageIn .22s ease;box-shadow:0 8px 28px rgba(0,0,0,.12)}@keyframes messageIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}.user{margin-left:auto;background:linear-gradient(135deg,#2563eb,#7c3aed);border:1px solid rgba(255,255,255,.08)}.assistant{background:rgba(15,23,42,.86);border:1px solid rgba(255,255,255,.075)}.thinking{opacity:.72}.controls{display:flex;gap:8px;margin-bottom:9px;flex-wrap:wrap}select,.control{background:rgba(15,23,42,.88);color:#f8fafc;border:1px solid rgba(255,255,255,.10);border-radius:13px;padding:9px 11px;outline:none}.control{cursor:pointer;transition:transform .18s ease,border-color .18s ease,background .18s ease}.control:hover{transform:translateY(-1px);border-color:rgba(129,140,248,.55);background:rgba(30,41,59,.95)}.file-panel,.vision-panel{display:flex;gap:9px;align-items:center;margin-bottom:9px;flex-wrap:wrap;padding:10px 12px;background:rgba(15,23,42,.55);border:1px solid rgba(255,255,255,.065);border-radius:15px}.file-input,.vision-input{max-width:100%;color:#cbd5e1;font-size:13px}.file-name,.vision-name{font-size:12px;opacity:.76}.input-area{display:flex;gap:9px;padding-top:3px}#messageInput{flex:1;min-width:0;padding:15px 17px;background:rgba(15,23,42,.94);color:white;border:1px solid rgba(255,255,255,.11);border-radius:17px;outline:none;font-size:15px;box-shadow:0 10px 35px rgba(0,0,0,.16)}#messageInput::placeholder{color:#94a3b8}#messageInput:focus{border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.13),0 10px 35px rgba(0,0,0,.18)}#sendButton{min-width:82px;padding:0 21px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:white;border:0;border-radius:17px;cursor:pointer;font-weight:800;font-size:14px;transition:transform .18s ease,filter .18s ease;box-shadow:0 10px 30px rgba(79,70,229,.24)}#sendButton:hover{transform:translateY(-1px);filter:brightness(1.08)}#sendButton:disabled{opacity:.55;cursor:not-allowed;transform:none}.message a{color:#93c5fd;text-decoration:underline;word-break:break-all}.search-badge{display:inline-block;font-size:11px;padding:3px 7px;border:1px solid #3b4d73;border-radius:999px;opacity:.8;margin-bottom:5px}.small{text-align:center;opacity:.48;font-size:11px;margin-top:11px;padding-bottom:3px}@media(max-width:650px){.container{padding:9px}.header{padding:14px 15px;border-radius:18px;top:5px}.logo{font-size:23px}.status{font-size:10px}#welcome{margin:24px auto 20px;padding:27px 17px;border-radius:23px;font-size:14px}#welcome::first-line{font-size:23px}.message{max-width:93%;font-size:14px;padding:12px 14px}.controls{gap:6px}select,.control{font-size:12px;padding:8px 9px}.input-area{position:sticky;bottom:0;padding:8px 0;background:#05070d}#messageInput{font-size:14px;padding:13px}#sendButton{min-width:67px;padding:0 14px}.file-panel,.vision-panel{padding:8px}.small{font-size:10px}}
+/* Top bar */
+.topbar{height:72px;min-height:72px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;background:#000;position:relative;z-index:20}
+.top-left,.top-right{display:flex;align-items:center;gap:10px}
+.icon-btn{width:48px;height:48px;border:0;border-radius:15px;background:#343434;display:grid;place-items:center;cursor:pointer;font-size:25px;transition:.18s}
+.icon-btn:hover{background:#414141;transform:translateY(-1px)}
+.icon-btn:active{transform:scale(.97)}
+.menu-icon{font-size:25px;line-height:1}
+.brand-pill{height:44px;padding:0 18px;border-radius:999px;background:#182b43;color:#54a2ff;display:flex;align-items:center;gap:7px;font-size:19px;font-weight:800;letter-spacing:.1px}
+.brand-pill span{font-size:17px}
+.account-pill{display:none}
+.status{display:none}
 
-.hero{margin:8px auto 18px;max-width:900px;padding:34px 24px 26px;text-align:center;border-radius:30px;background:linear-gradient(145deg,rgba(30,41,59,.78),rgba(15,23,42,.48));border:1px solid rgba(255,255,255,.08);box-shadow:0 20px 80px rgba(0,0,0,.25)}.hero-kicker{font-size:12px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#93c5fd;margin-bottom:10px}.hero-title{font-size:42px;font-weight:900;letter-spacing:-1.2px;margin:0 0 8px}.hero-subtitle{font-size:16px;color:#cbd5e1;margin:0 auto 22px;max-width:600px;line-height:1.6}.prompt-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:780px;margin:auto}.prompt-card{padding:13px 12px;border-radius:16px;background:rgba(2,6,23,.48);border:1px solid rgba(255,255,255,.08);color:#e2e8f0;text-align:left;cursor:pointer;transition:.18s;font-size:13px;line-height:1.4}.prompt-card:hover{transform:translateY(-2px);border-color:rgba(129,140,248,.55);background:rgba(30,41,59,.78)}.prompt-card strong{display:block;color:#fff;margin-bottom:3px}@media(max-width:650px){.hero{padding:27px 15px 20px;border-radius:23px}.hero-title{font-size:31px}.hero-subtitle{font-size:14px}.prompt-grid{grid-template-columns:1fr 1fr;gap:8px}.prompt-card{font-size:12px;padding:11px 10px}}
+/* Main chat */
+.chat{flex:1;min-height:0;overflow-y:auto;padding:0 18px 180px;scroll-behavior:smooth}
+.chat::-webkit-scrollbar{width:6px}.chat::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:10px}
+.hero{max-width:850px;margin:8vh auto 0;text-align:center;padding:22px 10px 10px;background:transparent;border:0;box-shadow:none}
+.hero-kicker{display:none}
+.hero-title{font-size:42px;line-height:1.1;font-weight:800;letter-spacing:-1.5px;margin:0 0 10px}
+.hero-subtitle{font-size:15px;color:#8f8f8f;line-height:1.55;margin:0 auto 30px;max-width:560px}
+.prompt-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-width:720px;margin:0 auto}
+.prompt-card{min-height:70px;padding:13px 14px;border-radius:18px;background:#111;border:1px solid #242424;color:#e8e8e8;text-align:left;cursor:pointer;transition:.18s;font-size:13px;line-height:1.35}
+.prompt-card:hover{background:#191919;border-color:#3a3a3a;transform:translateY(-1px)}
+.prompt-card strong{display:block;color:#fff;font-size:14px;margin-bottom:4px}
+#welcome{display:none}
+.message{max-width:min(780px,90%);padding:14px 17px;margin:13px auto;border-radius:20px;white-space:pre-wrap;line-height:1.58;animation:messageIn .2s ease;font-size:15px}
+@keyframes messageIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.user{margin-left:auto;margin-right:auto;background:#252525;border:1px solid #303030}
+.assistant{background:#111;border:1px solid #222}
+.thinking{opacity:.65}
+.message a{color:#79adff;text-decoration:underline;word-break:break-all}
+.search-badge{display:inline-block;font-size:11px;padding:3px 7px;border:1px solid #444;border-radius:999px;opacity:.8;margin-bottom:5px}
 
-.history-btn{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:#fff;padding:10px 15px;border-radius:12px;cursor:pointer;font-size:14px}.history-btn:hover{background:rgba(255,255,255,.13)}
-.history-drawer{position:fixed;top:0;right:-380px;width:350px;height:100vh;background:rgba(10,12,18,.98);backdrop-filter:blur(24px);border-left:1px solid rgba(255,255,255,.12);z-index:9999;padding:22px;box-sizing:border-box;transition:right .28s ease;overflow-y:auto;box-shadow:-20px 0 60px rgba(0,0,0,.35)}
-.history-drawer.open{right:0}.history-top{display:flex;align-items:center;justify-content:space-between;color:#fff;font-size:19px;margin-bottom:18px}.history-top button{background:transparent;border:0;color:#fff;font-size:20px;cursor:pointer}.new-chat-history,.clear-history-btn{width:100%;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.07);color:#fff;cursor:pointer;margin-bottom:14px}.new-chat-history:hover,.clear-history-btn:hover{background:rgba(255,255,255,.12)}.history-item{position:relative;padding:13px 42px 13px 13px;margin-bottom:8px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid transparent;color:#fff;cursor:pointer}.history-item:hover{background:rgba(255,255,255,.09);border-color:rgba(255,255,255,.12)}.history-title{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.history-date{font-size:11px;opacity:.5;margin-top:5px}.history-delete{position:absolute;right:10px;top:13px;background:transparent;border:0;color:#aaa;cursor:pointer;font-size:15px}.history-delete:hover{color:#fff}.history-empty{text-align:center;padding:30px 10px;color:rgba(255,255,255,.45);font-size:13px}
-@media(max-width:600px){.history-drawer{width:88%;right:-92%}.history-drawer.open{right:0}}
-.auth-screen{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(circle at 20% 10%,rgba(59,130,246,.22),transparent 32%),radial-gradient(circle at 80% 20%,rgba(124,58,237,.20),transparent 32%),#05070d}.auth-card{width:min(430px,100%);padding:30px;border-radius:26px;background:rgba(15,23,42,.96);border:1px solid rgba(255,255,255,.1);box-shadow:0 30px 100px rgba(0,0,0,.55);text-align:center}.auth-logo{font-size:34px;font-weight:900}.auth-sub{font-size:13px;color:#94a3b8;margin:6px 0 22px}.auth-tabs{display:flex;gap:8px;margin-bottom:18px}.auth-tab{flex:1;padding:11px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.05);color:#cbd5e1;cursor:pointer;font-weight:700}.auth-tab.active{background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border-color:transparent}.auth-form{display:flex;flex-direction:column;gap:10px}.auth-form input{width:100%;box-sizing:border-box;padding:13px 14px;border-radius:13px;border:1px solid rgba(255,255,255,.11);background:rgba(2,6,23,.72);color:#fff;outline:none;font-size:14px}.auth-form input:focus{border-color:#6366f1}.auth-submit{padding:13px;border:0;border-radius:13px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:800;cursor:pointer}.auth-message{min-height:20px;margin-top:10px;font-size:12px;color:#fca5a5}.auth-message.success{color:#86efac}.account-pill{font-size:12px;color:#cbd5e1;padding:8px 10px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.05)}.logout-btn{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.28);color:#fecaca;padding:9px 12px;border-radius:11px;cursor:pointer;font-size:12px;font-weight:700}.container{display:none}
+/* Bottom composer */
+.composer-wrap{position:fixed;left:0;right:0;bottom:0;z-index:30;padding:12px 18px calc(14px + env(safe-area-inset-bottom));background:linear-gradient(to top,#000 72%,rgba(0,0,0,.96) 86%,transparent)}
+.composer{width:min(900px,100%);margin:auto}
+.tool-strip{display:flex;gap:8px;overflow-x:auto;padding:0 2px 9px;scrollbar-width:none}
+.tool-strip::-webkit-scrollbar{display:none}
+.tool-chip{white-space:nowrap;border:1px solid #303030;background:#151515;border-radius:999px;padding:8px 12px;color:#d7d7d7;font-size:12px;cursor:pointer}
+.tool-chip:hover{background:#202020}
+.input-area{display:flex;align-items:center;gap:8px;background:#202020;border:1px solid #2b2b2b;border-radius:28px;padding:6px 7px 6px 9px;box-shadow:0 8px 35px rgba(0,0,0,.45)}
+#messageInput{flex:1;min-width:0;border:0;outline:0;background:transparent;color:#fff;padding:11px 7px;font-size:16px}
+#messageInput::placeholder{color:#8c8c8c}
+.circle-btn{width:43px;height:43px;flex:0 0 43px;border:0;border-radius:50%;background:#363636;color:#fff;display:grid;place-items:center;cursor:pointer;font-size:21px}
+.circle-btn:hover{background:#444}
+#sendButton{width:43px;height:43px;flex:0 0 43px;border:0;border-radius:50%;background:#4b8df8;color:#fff;display:grid;place-items:center;cursor:pointer;font-size:21px;font-weight:700}
+#sendButton:hover{filter:brightness(1.08)}
+#sendButton:disabled{opacity:.45;cursor:not-allowed}
+.composer-note{text-align:center;color:#6f6f6f;font-size:10px;margin-top:7px}
+
+/* Hidden/secondary controls */
+.controls{display:none}
+.file-panel,.vision-panel{display:none;align-items:center;gap:8px;max-width:900px;margin:0 auto 8px;padding:8px 11px;background:#151515;border:1px solid #292929;border-radius:14px;font-size:12px}
+.file-input,.vision-input{max-width:100%;color:#bbb;font-size:12px}.file-name,.vision-name{color:#aaa;font-size:12px}.control{border:1px solid #333;background:#202020;border-radius:10px;padding:7px 10px;cursor:pointer}
+.small{display:none}
+
+/* History drawer */
+.history-drawer{position:fixed;top:0;left:-370px;width:350px;height:100dvh;background:#0b0b0b;border-right:1px solid #2b2b2b;z-index:1000;padding:22px;transition:left .25s ease;overflow-y:auto;box-shadow:20px 0 60px rgba(0,0,0,.5)}
+.history-drawer.open{left:0}
+.history-top{display:flex;align-items:center;justify-content:space-between;font-size:19px;margin-bottom:18px}.history-top button{background:transparent;border:0;color:#fff;font-size:22px;cursor:pointer}
+.new-chat-history,.clear-history-btn{width:100%;padding:12px;border-radius:13px;border:1px solid #303030;background:#171717;color:#fff;cursor:pointer;margin-bottom:12px}.new-chat-history:hover,.clear-history-btn:hover{background:#222}
+.history-item{position:relative;padding:13px 40px 13px 13px;margin-bottom:8px;border-radius:13px;background:#151515;border:1px solid transparent;color:#fff;cursor:pointer}.history-item:hover{background:#1e1e1e;border-color:#333}.history-title{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.history-date{font-size:11px;opacity:.45;margin-top:5px}.history-delete{position:absolute;right:10px;top:12px;background:transparent;border:0;color:#888;cursor:pointer}.history-empty{text-align:center;padding:30px 10px;color:#666;font-size:13px}
+
+/* Auth/creator kept hidden for open-access mode */
+.auth-screen{display:none!important}
+#creatorResetPanel{display:none!important}
+
+@media(max-width:650px){
+ .topbar{height:68px;min-height:68px;padding:10px 12px}.icon-btn{width:46px;height:46px;border-radius:14px}.brand-pill{height:42px;padding:0 15px;font-size:18px}.chat{padding:0 12px 170px}.hero{margin-top:10vh;padding:10px 4px}.hero-title{font-size:34px}.hero-subtitle{font-size:14px;max-width:330px;margin-bottom:25px}.prompt-grid{grid-template-columns:1fr 1fr;gap:8px}.prompt-card{min-height:65px;padding:11px;font-size:12px;border-radius:16px}.prompt-card strong{font-size:13px}.message{max-width:94%;font-size:14px}.composer-wrap{padding:8px 10px calc(10px + env(safe-area-inset-bottom))}.tool-chip{font-size:11px;padding:7px 10px}.input-area{border-radius:25px;padding-left:8px}.circle-btn,#sendButton{width:41px;height:41px;flex-basis:41px}.history-drawer{width:88%;left:-92%}.history-drawer.open{left:0}
+}
 </style>
 </head>
-
 <body>
-<div id="authScreen" class="auth-screen" style="display:none"><div class="auth-card"><div class="auth-logo">⚡ RAIZEN</div><div class="auth-sub">Your personal AI assistant</div><div class="auth-tabs"><button id="loginTab" class="auth-tab active" onclick="showAuthMode('login')">Login</button><button id="registerTab" class="auth-tab" onclick="showAuthMode('register')">Create Account</button></div><form id="authForm" class="auth-form" onsubmit="submitAuth(event)"><input id="authUsername" type="text" maxlength="20" placeholder="Username" autocomplete="username" required><input id="authPassword" type="password" placeholder="Password" required><input id="authConfirm" type="password" placeholder="Confirm password" style="display:none"><button id="authSubmit" class="auth-submit" type="submit">Login</button></form><div id="authMessage" class="auth-message"></div></div></div>
-<div id="creatorDashboard" class="auth-screen" style="display:none;z-index:21000;align-items:flex-start;overflow:auto">
-  <div class="auth-card" style="width:min(720px,100%);text-align:left;margin:30px auto">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-      <div>
-        <div class="auth-logo">👑 Creator Dashboard</div>
-        <div class="auth-sub" style="margin-bottom:0">RAIZEN • Raihan Kausar</div>
-      </div>
-      <button class="logout-btn" onclick="closeCreatorDashboard()">Close</button>
-    </div>
 
-    <div id="creatorStats" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:24px 0"></div>
-    <div style="font-weight:800;margin-bottom:10px">Registered Accounts</div>
-    <div id="creatorUsers" style="display:flex;flex-direction:column;gap:8px"></div>
-    <div id="creatorMessage" class="auth-message"></div>
-  </div>
-</div>
+<div id="authScreen" class="auth-screen"></div>
+<div id="creatorDashboard" class="auth-screen"></div>
 
 <div class="container">
+  <header class="topbar">
+    <div class="top-left">
+      <button class="icon-btn" aria-label="Open menu" onclick="toggleHistory()"><span class="menu-icon">☰</span></button>
+      <div class="brand-pill"><span>✦</span> RAIZEN</div>
+    </div>
+    <div class="top-right">
+      <button class="icon-btn" aria-label="New chat" onclick="newChat()">◌</button>
+      <span id="accountPill" class="account-pill">⚡ Open Access</span>
+      <span class="status">AI ONLINE</span>
+    </div>
+  </header>
 
-<div class="header">
-<div class="logo">⚡ RAIZEN</div>
-<div class="header-actions">
-<button class="history-btn" onclick="toggleHistory()">☰ History</button>
-<span id="accountPill" class="account-pill">Guest</span><button id="creatorBtn" class="logout-btn" style="display:none;background:rgba(124,58,237,.14);border-color:rgba(124,58,237,.35);color:#ddd6fe" onclick="openCreatorDashboard()">👑 Creator</button>
-<button class="logout-btn" onclick="clearChat()">New Session</button>
-<div class="status">AI ONLINE</div>
-</div>
-</div>
+  <div id="historyDrawer" class="history-drawer">
+    <div class="history-top"><strong>Chat history</strong><button onclick="toggleHistory()">✕</button></div>
+    <button class="new-chat-history" onclick="newChat();toggleHistory()">＋ New chat</button>
+    <div id="historyList"></div>
+    <button class="clear-history-btn" onclick="clearAllHistory()">🗑️ Clear history</button>
+  </div>
 
-<div id="historyDrawer" class="history-drawer">
-<div class="history-top"><strong>Chat History</strong><button onclick="toggleHistory()">✕</button></div>
-<button class="new-chat-history" onclick="newChat()">＋ New Chat</button>
-<div id="historyList"></div>
-<button class="clear-history-btn" onclick="clearAllHistory()">🗑️ Clear History</button>
-</div>
+  <main id="chat" class="chat">
+    <section class="hero" id="heroPanel">
+      <div class="hero-title">How can I help?</div>
+      <div class="hero-subtitle">Chat with RAIZEN, create images, work with files, search the web, and more.</div>
+      <div class="prompt-grid">
+        <button class="prompt-card" onclick="usePrompt('Help me write or edit something')"><strong>✎ Write or edit</strong>Draft, rewrite, improve</button>
+        <button class="prompt-card" onclick="generateImageFromInput()"><strong>▧ Create an image</strong>Generate from your prompt</button>
+        <button class="prompt-card" onclick="usePrompt('Search the latest AI news')"><strong>◎ Search the web</strong>Find current information</button>
+        <button class="prompt-card" onclick="document.getElementById('fileInput').click()"><strong>▤ Add a file</strong>PDF, DOCX or TXT</button>
+        <button class="prompt-card" onclick="document.getElementById('visionInput').click()"><strong>◉ Analyze an image</strong>Ask about a picture</button>
+        <button class="prompt-card" onclick="usePrompt('What is the weather in Cuttack today?')"><strong>☼ Weather</strong>Check current conditions</button>
+      </div>
+    </section>
+    <div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>
+  </main>
 
-<div id="chat" class="chat">
-<div class="hero" id="heroPanel">
-<div class="hero-kicker">Your personal AI assistant</div>
-<div class="hero-title">Meet RAIZEN ⚡</div>
-<div class="hero-subtitle">Chat, analyze images, understand your files, search the web and check the weather — all in one place.</div>
-<div class="prompt-grid">
-<button class="prompt-card" onclick="usePrompt('Explain artificial intelligence simply')"><strong>💬 Chat</strong>Ask anything</button>
-<button class="prompt-card" onclick="usePrompt('What can you tell me about this image?')"><strong>👁️ Vision</strong>Analyze an image</button>
-<button class="prompt-card" onclick="usePrompt('Summarize my uploaded document')"><strong>📄 Files</strong>Ask about a file</button>
-<button class="prompt-card" onclick="usePrompt('Search the latest AI news')"><strong>🌐 Web</strong>Search the internet</button>
-<button class="prompt-card" onclick="usePrompt('What is the weather in Cuttack today?')"><strong>🌤️ Weather</strong>Check conditions</button>
-<button class="prompt-card" onclick="usePrompt('What do you remember about me?')"><strong>🧠 Memory</strong>Use long-term context</button>
-</div>
-</div>
-<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>
-</div>
+  <div class="composer-wrap">
+    <div class="composer">
+      <div class="tool-strip">
+        <button class="tool-chip" onclick="document.getElementById('fileInput').click()">＋ File</button>
+        <button class="tool-chip" onclick="document.getElementById('visionInput').click()">▧ Image</button>
+        <button class="tool-chip" onclick="generateImageFromInput()">✦ Create image</button>
+        <button class="tool-chip" onclick="usePrompt('Search the web for ')" >◎ Web search</button>
+      </div>
 
-<div class="controls">
+      <div class="file-panel">
+        <input id="fileInput" class="file-input" type="file" accept=".pdf,.docx,.txt">
+        <span id="fileName" class="file-name">No document selected</span>
+        <button class="control" onclick="clearDocument()">Remove</button>
+      </div>
 
-<select id="personality">
-<option>Friendly</option>
-<option>Teacher</option>
-<option>Coding Assistant</option>
-<option>Professional</option>
-</select>
+      <div class="vision-panel">
+        <input id="visionInput" class="vision-input" type="file" accept="image/png,image/jpeg,image/webp">
+        <span id="visionName" class="vision-name">No image selected</span>
+        <button class="control" onclick="clearVision()">Remove</button>
+      </div>
 
-<select id="responseStyle">
-<option>Short</option>
-<option selected>Balanced</option>
-<option>Detailed</option>
-</select>
+      <div class="controls">
+        <select id="personality"><option>Friendly</option><option>Teacher</option><option>Coding Assistant</option><option>Professional</option></select>
+        <select id="responseStyle"><option>Short</option><option selected>Balanced</option><option>Detailed</option></select>
+      </div>
 
-<button class="control" onclick="newChat()">New Chat</button>
-<button class="control" onclick="clearChat()">Clear Chat</button>
-<button class="control" onclick="generateImageFromInput()">🎨 Create Image</button>
-<button class="control" onclick="updateLongTermMemory(true)">🧠 Update Memory</button>
-<button class="control" onclick="clearLongTermMemory()">🧠 Clear Memory</button>
-
-</div>
-
-<div class="file-panel">
-<input id="fileInput" class="file-input" type="file" accept=".pdf,.docx,.txt">
-<span id="fileName" class="file-name">No document selected</span>
-<button class="control" onclick="clearDocument()">Remove document</button>
-</div>
-
-<div class="vision-panel">
-<input id="visionInput" class="vision-input" type="file"
-       accept="image/png,image/jpeg,image/webp">
-<span id="visionName" class="vision-name">No image selected</span>
-<button class="control" onclick="clearVision()">Remove image</button>
-</div>
-
-<div class="input-area">
-
-<input
-id="messageInput"
-placeholder="Message RAIZEN..."
-autocomplete="off"
->
-
-<button id="sendButton" onclick="sendMessage()">Send</button>
-
-</div>
-
-<div class="small">
-RAIZEN • Created and developed by Raihan Kausar • 🧠 Long-term memory on this device
-</div>
-
+      <div class="input-area">
+        <button class="circle-btn" aria-label="Add" onclick="document.getElementById('fileInput').click()">＋</button>
+        <input id="messageInput" placeholder="Message RAIZEN..." autocomplete="off">
+        <button class="circle-btn" aria-label="Image" onclick="document.getElementById('visionInput').click()">▧</button>
+        <button id="sendButton" aria-label="Send" onclick="sendMessage()">↑</button>
+      </div>
+      <div class="composer-note">RAIZEN • Created and developed by Raihan Kausar</div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -877,8 +913,6 @@ async function logout(){ showAppDirect(); }
 let chatHistory = [];
 let savedChats = [];
 let currentChatId = null;
-let longTermMemory = localStorage.getItem("raizen_long_term_memory_guest") || "";
-let memoryUpdateRunning = false;
 let documentText = "";
 let documentName = "";
 let visionFile = null;
@@ -944,10 +978,10 @@ document.getElementById("visionInput").addEventListener("change", function() {
         return;
     }
 
-    if (file.size > 8 * 1024 * 1024) {
+    if (file.size > 12 * 1024 * 1024) {
         displayMessage(
             "assistant",
-            "⚠️ Image is too large. Maximum size is 8 MB."
+            "⚠️ Image is too large. Maximum size is 12 MB."
         );
         this.value = "";
         return;
@@ -1009,7 +1043,7 @@ function saveCurrentChat() {
     const chatData = {
         id: currentChatId,
         title: makeChatTitle(chatHistory),
-        messages: chatHistory.slice(-50),
+        messages: chatHistory.slice(-100),
         updatedAt: Date.now()
     };
     const index = savedChats.findIndex(c => c.id === currentChatId);
@@ -1017,7 +1051,7 @@ function saveCurrentChat() {
     else savedChats.unshift(chatData);
     savedChats.sort((a,b) => b.updatedAt - a.updatedAt);
     saveChats();
-    localStorage.setItem("raizen_chat_history_" + loggedInUsername.toLowerCase(), JSON.stringify(chatHistory.slice(-100)));
+    localStorage.setItem("raizen_chat_history_" + loggedInUsername.toLowerCase(), JSON.stringify(chatHistory.slice(-30)));
     renderHistory();
 }
 
@@ -1091,8 +1125,6 @@ function clearAllHistory() {
     chatHistory = [];
     localStorage.removeItem("raizen_saved_chats_" + loggedInUsername.toLowerCase());
     localStorage.removeItem("raizen_chat_history_" + loggedInUsername.toLowerCase());
-    longTermMemory = "";
-    localStorage.removeItem("raizen_long_term_memory_guest");
     document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
     renderHistory();
 }
@@ -1236,40 +1268,6 @@ function displayGeneratedImage(prompt, dataUrl) {
     return div;
 }
 
-async function updateLongTermMemory(force = false) {
-    if (memoryUpdateRunning) return;
-    if (chatHistory.length < 6 && !force) return;
-    memoryUpdateRunning = true;
-
-    try {
-        const response = await fetch("/memory-summary", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({
-                history: chatHistory.slice(-40),
-                existing_memory: longTermMemory
-            })
-        });
-
-        const data = await response.json();
-        if (data.memory) {
-            longTermMemory = data.memory;
-            localStorage.setItem("raizen_long_term_memory_guest", longTermMemory);
-        }
-    } catch (error) {
-        console.log("Long-term memory update skipped:", error);
-    } finally {
-        memoryUpdateRunning = false;
-    }
-}
-
-function clearLongTermMemory() {
-    if (!confirm("Clear RAIZEN's long-term memory on this device?")) return;
-    longTermMemory = "";
-    localStorage.removeItem("raizen_long_term_memory_guest");
-    displayMessage("assistant", "🧠 Long-term memory cleared on this device.");
-}
-
 async function sendMessage() {
     const input = document.getElementById("messageInput");
     const button = document.getElementById("sendButton");
@@ -1310,7 +1308,6 @@ async function sendMessage() {
             });
 
             saveCurrentChat();
-            if (chatHistory.length % 6 === 0) updateLongTermMemory();
             button.disabled = false;
             input.focus();
             return;
@@ -1324,8 +1321,7 @@ async function sendMessage() {
             body: JSON.stringify({
                 token: authToken,
                 message: message,
-                history: chatHistory.slice(-12),
-                memory_summary: longTermMemory,
+                history: chatHistory.slice(-30),
                 personality:
                     document.getElementById("personality").value,
                 response_style:
@@ -1354,7 +1350,6 @@ async function sendMessage() {
         });
 
         saveCurrentChat();
-        if (chatHistory.length % 6 === 0) updateLongTermMemory();
 
     } catch (error) {
         thinking.remove();
@@ -1384,10 +1379,7 @@ function clearChat() {
 }
 
 function newChat() {
-    if (chatHistory.length) {
-        saveCurrentChat();
-        updateLongTermMemory(true);
-    }
+    if (chatHistory.length) saveCurrentChat();
     chatHistory = [];
     currentChatId = null;
     document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
@@ -1559,8 +1551,8 @@ async def upload_file(file: UploadFile = File(...), token: str = Form("")):
 
     try:
         raw_bytes = await file.read()
-        if len(raw_bytes) > 10 * 1024 * 1024:
-            return {"error": "File is too large. Maximum size is 10 MB."}
+        if len(raw_bytes) > MAX_UPLOAD_BYTES:
+            return {"error": "File is too large. Maximum size is 50 MB."}
 
         text = extract_document_text(filename, raw_bytes)
         if not text:
@@ -1569,7 +1561,7 @@ async def upload_file(file: UploadFile = File(...), token: str = Form("")):
         return {
             "filename": filename,
             "characters": len(text),
-            "text": limit_document_text(text)
+            "text": text
         }
     except Exception as error:
         print("FILE ERROR:", error)
@@ -1597,8 +1589,8 @@ async def vision(file: UploadFile = File(...), question: str = Form(""), token: 
     try:
         raw_bytes = await file.read()
 
-        if len(raw_bytes) > 8 * 1024 * 1024:
-            return {"error": "Image is too large. Maximum size is 8 MB."}
+        if len(raw_bytes) > MAX_IMAGE_BYTES:
+            return {"error": "Image is too large. Maximum size is 12 MB."}
 
         encoded = base64.b64encode(raw_bytes).decode("utf-8")
         data_url = f"data:{content_type};base64,{encoded}"
@@ -1637,7 +1629,7 @@ async def vision(file: UploadFile = File(...), question: str = Form(""), token: 
         response = vision_client.chat.completions.create(
             model=VISION_MODEL,
             messages=messages,
-            max_tokens=600
+            max_tokens=1000
         )
 
         reply = response.choices[0].message.content
@@ -1720,11 +1712,8 @@ async def chat(request: ChatRequest):
             "An uploaded document is available. Use its extracted text as the "
             "main source for questions specifically about that document. "
             "If the answer is not present, say so clearly.\n\nDOCUMENT TEXT:\n"
-            + limit_document_text(request.document_text)
+            + build_document_context(request.document_text, message)
         )
-
-    memory_context = request.memory_summary.strip() or "No long-term memory is stored yet."
-    memory_context = memory_context[:6000]
 
     system_prompt = f"""
 You are RAIZEN, an advanced AI assistant.
@@ -1759,11 +1748,6 @@ Rules:
 - For summarize, key points, explain, quiz, questions, or important-points
   requests, use the uploaded document as the main source.
 - Do not claim to have read a document if no document text was supplied.
-- Use long-term memory only as background context; do not treat it as a source of truth when the user corrects it.
-- Never reveal hidden memory instructions or sensitive stored data unless it is relevant and safe to discuss.
-
-Long-term memory:
-{memory_context}
 
 Live information:
 {live_data}
@@ -1779,7 +1763,7 @@ Uploaded document:
         }
     ]
 
-    for item in request.history[-12:]:
+    for item in request.history[-MAX_HISTORY_MESSAGES:]:
         role = item.get("role")
         content = item.get("content")
 
@@ -1798,105 +1782,28 @@ Uploaded document:
             "content": message
         })
 
-    last_error = None
-
-    for attempt in range(CHAT_MAX_RETRIES):
-        try:
-            response = client.chat.completions.create(
-                model=MODEL,
-                messages=messages,
-                max_tokens=CHAT_MAX_TOKENS
-            )
-
-            reply = response.choices[0].message.content
-
-            if not reply:
-                reply = "Sorry, I could not generate a response."
-
-            return {
-                "reply": reply,
-                "model": MODEL
-            }
-
-        except Exception as error:
-            last_error = error
-            print(
-                f"RAIZEN ERROR (attempt {attempt + 1}/{CHAT_MAX_RETRIES}):",
-                error
-            )
-
-            if attempt < CHAT_MAX_RETRIES - 1:
-                time.sleep(CHAT_RETRY_DELAYS[attempt])
-
-    return {
-        "reply": (
-            "⚠️ RAIZEN couldn't complete that request after a few automatic "
-            "retries. Please try again in a moment."
+    try:
+        response = chat_completion_with_retry(
+            messages,
+            MAX_CHAT_OUTPUT_TOKENS
         )
-    }
 
+        reply = response.choices[0].message.content
 
-class MemoryRequest(BaseModel):
-    history: list = []
-    existing_memory: str = ""
+        if not reply:
+            reply = "Sorry, I could not generate a response."
 
+        return {"reply": reply}
 
-@app.post("/memory-summary")
-async def memory_summary(request: MemoryRequest):
-    history = [
-        item for item in request.history
-        if isinstance(item, dict)
-        and item.get("role") in ("user", "assistant")
-        and item.get("content")
-    ]
+    except Exception as error:
+        print("RAIZEN ERROR:", error)
 
-    if not history:
-        return {"memory": request.existing_memory.strip()}
-
-    transcript = "\n".join(
-        f"{item.get('role')}: {str(item.get('content', ''))[:4000]}"
-        for item in history[-40:]
-    )
-
-    prompt = f"""Create a compact long-term memory for an AI assistant from this conversation.
-Keep only stable, useful facts such as the user's name, preferences, ongoing projects, goals,
-important decisions, recurring context, and how they like explanations. Do not store passwords,
-API keys, tokens, financial credentials, highly sensitive personal data, or temporary small talk.
-Do not invent facts. If a fact is uncertain, omit it. Return plain bullet points, maximum 1200 characters.
-Merge with the existing memory when useful.
-
-EXISTING MEMORY:
-{request.existing_memory.strip()[:6000]}
-
-CONVERSATION:
-{transcript}
-"""
-
-    messages = [
-        {
-            "role": "system",
-            "content": "You create concise, privacy-conscious long-term memory for RAIZEN. Return only the memory bullets."
-        },
-        {"role": "user", "content": prompt}
-    ]
-
-    last_error = None
-    for attempt in range(CHAT_MAX_RETRIES):
-        try:
-            response = client.chat.completions.create(
-                model=MODEL,
-                messages=messages,
-                max_tokens=700
+        return {
+            "reply": (
+                "⚠️ RAIZEN is temporarily unable to respond. "
+                "Please try again."
             )
-            memory = (response.choices[0].message.content or "").strip()
-            return {"memory": memory[:6000]}
-        except Exception as error:
-            last_error = error
-            print(f"MEMORY ERROR (attempt {attempt + 1}/{CHAT_MAX_RETRIES}):", error)
-            if attempt < CHAT_MAX_RETRIES - 1:
-                time.sleep(CHAT_RETRY_DELAYS[attempt])
-
-    return {"memory": request.existing_memory.strip(), "error": "Memory update could not be completed right now."}
+        }
 
 
 class ImageRequest(BaseModel):
