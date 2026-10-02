@@ -12,7 +12,7 @@ from io import BytesIO
 import xml.etree.ElementTree as ET
 
 from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
 import psycopg
@@ -23,6 +23,15 @@ from fastapi import FastAPI, UploadFile, File, Form, Response
 from fastapi.responses import HTMLResponse
 
 app = FastAPI()
+from fastapi.responses import PlainTextResponse
+
+@app.get("/robots.txt", response_class=PlainTextResponse)
+def robots():
+    return """User-agent: *
+Allow: /
+
+Sitemap: https://raizen-ai.onrender.com/sitemap.xml
+"""
 
 @app.head("/")
 def head_home():
