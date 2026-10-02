@@ -12,6 +12,8 @@ from io import BytesIO
 import xml.etree.ElementTree as ET
 
 from fastapi import FastAPI, UploadFile, File, Form
+from starlette.middleware.sessions import SessionMiddleware
+from authlib.integrations.starlette_client import OAuth
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
@@ -21,6 +23,25 @@ from pypdf import PdfReader
 from docx import Document
 
 app = FastAPI()
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("AUTH0_SESSION_SECRET"),
+    same_site="lax",
+    https_only=True,
+)
+oauth = OAuth()
+
+oauth.register(
+    name="auth0",
+    client_id=os.getenv("AUTH0_CLIENT_ID"),
+    client_secret=os.getenv("AUTH0_CLIENT_SECRET"),
+    server_metadata_url=(
+        f"https://{os.getenv('AUTH0_DOMAIN')}/.well-known/openid-configuration"
+    ),
+    client_kwargs={
+        "scope": "openid profile email",
+    },
+)
 from fastapi.responses import PlainTextResponse
 
 @app.get("/robots.txt", response_class=PlainTextResponse)
