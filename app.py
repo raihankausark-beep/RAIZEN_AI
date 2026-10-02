@@ -11,7 +11,8 @@ from urllib.request import Request, urlopen
 from io import BytesIO
 import xml.etree.ElementTree as ET
 
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, Request, UploadFile, File, Form
+from starlette.responses import RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
 from fastapi.responses import HTMLResponse, PlainTextResponse
@@ -30,6 +31,25 @@ app.add_middleware(
     https_only=True,
 )
 oauth = OAuth()
+@app.get("/login")
+async def login(request: Request):
+    redirect_uri = request.url_for("auth_callback")
+    return await oauth.auth0.authorize_redirect(request, redirect_uri)
+
+
+@app.get("/callback")
+async def auth_callback(request: Request):
+    token = await oauth.auth0.authorize_access_token(request)
+    user = token.get("userinfo")
+
+    request.session["user"] = {
+        "sub": user.get("sub"),
+        "name": user.get("name"),
+        "email": user.get("email"),
+        "picture": user.get("picture"),
+    }
+
+    return RedirectResponse(url="/")
 
 oauth.register(
     name="auth0",
