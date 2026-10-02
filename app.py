@@ -839,9 +839,16 @@ button{color:inherit}
   <div id="historyDrawer" class="history-drawer">
     <div class="history-top"><strong>Chat history</strong><button onclick="toggleHistory()">✕</button></div>
     <button class="new-chat-history" onclick="newChat();toggleHistory()">＋ New chat</button>
-    <div id="historyList"></div>
-    <button class="clear-history-btn" onclick="clearAllHistory()">🗑️ Clear history</button>
-  </div>
+
+<button class="clear-history-btn" onclick="clearChat();toggleHistory()">
+    🧹 Clear current chat
+</button>
+
+<div id="historyList"></div>
+
+<button class="clear-history-btn" onclick="clearAllHistory()">
+    🗑️ Clear all history
+</button>
 
   <main id="chat" class="chat">
     <section class="hero" id="heroPanel">
