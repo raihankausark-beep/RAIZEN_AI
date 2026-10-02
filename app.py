@@ -48,9 +48,77 @@ async def auth_callback(request: Request):
         "email": user.get("email"),
         "picture": user.get("picture"),
     }
+    @app.get("/logout")
+async def logout(request: Request):
+    request.session.clear()
+
+    domain = os.getenv("AUTH0_DOMAIN")
+    client_id = os.getenv("AUTH0_CLIENT_ID")
+
+    return RedirectResponse(
+        f"https://{domain}/v2/logout"
+        f"?client_id={client_id}"
+        f"&returnTo=https://raizen-ai.onrender.com/login"
+    )
 
     return RedirectResponse(url="/")
+@app.get("/auth/user")
+async def auth_user(request: Request):
+    user = request.session.get("user")
 
+    if not user:
+        return {
+            "ok": False,
+            "user": None
+        }
+
+    email = user.get("email") or user.get("sub") or "auth0_user"
+    username = email.strip().lower()
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT username FROM raizen_users WHERE username_key = %s",
+                    (username,)
+                )
+                existing = cur.fetchone()
+
+                if not existing:
+                    salt, password_hash = hash_password(
+                        secrets.token_urlsafe(32)
+                    )
+
+                    cur.execute(
+                        """INSERT INTO raizen_users
+                           (username_key, username, salt, password_hash, created_at)
+                           VALUES (%s, %s, %s, %s, %s)""",
+                        (
+                            username,
+                            username,
+                            salt,
+                            password_hash,
+                            datetime.now(timezone.utc)
+                        )
+                    )
+
+            conn.commit()
+
+        session_token = create_auth_token(username)
+
+        return {
+            "ok": True,
+            "user": user,
+            "token": session_token,
+            "username": username
+        }
+
+    except Exception as error:
+        print("AUTH0 USER ERROR:", error)
+        return {
+            "ok": False,
+            "user": None
+        }
 oauth.register(
     name="auth0",
     client_id=os.getenv("AUTH0_CLIENT_ID"),
@@ -211,8 +279,31 @@ def create_auth_token(username):
 
 
 def get_authenticated_username(token):
-    # RAIZEN is intentionally open-access: no login or account is required.
-    return "Guest"
+    if not token:
+        return ""
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT u.username
+                    FROM raizen_sessions s
+                    JOIN raizen_users u
+                      ON u.username_key = s.username_key
+                    WHERE s.token_hash = %s
+                      AND s.expires_at > NOW()
+                    """,
+                    (hash_token(token),)
+                )
+
+                row = cur.fetchone()
+
+        return row["username"] if row else ""
+
+    except Exception as error:
+        print("AUTH CHECK ERROR:", error)
+        return ""
 
 
 class ChatRequest(BaseModel):
@@ -938,22 +1029,46 @@ button{color:inherit}
 </div>
 
 <script>
-let authToken = "open-access";
-let loggedInUsername = "Guest";
+let authToken = "";
+let loggedInUsername = "";
 let authMode = "login";
 
 function showAuthMode(mode){ return false; }
 function submitAuth(event){ if(event) event.preventDefault(); return false; }
-function checkLogin(){ showAppDirect(); }
-function showLoginScreen(){ showAppDirect(); }
-function showAppAfterLogin(){ showAppDirect(); }
+async function checkLogin(){
+    try {
+        const response = await fetch("/auth/user");
+        const data = await response.json();
+
+        if (data.ok && data.user) {
+            authToken = 
+                data.username ||
+                data.user.email ||
+                data.user.name
+                "User";
+
+            showAppAfterLogin();
+        } else {
+            window.location.href = "/login";
+        }
+    } catch (error) {
+        window.location.href = "/login";
+    }
+}
+
+function showLoginScreen(){
+function checkLogin(){
+    window.location.href = "/login";
+}
+function showAppAfterLogin(){ 
+     showAppDirect(); }
 function showAppDirect(){
   const authScreen=document.getElementById("authScreen");
   const container=document.querySelector(".container");
   if(authScreen) authScreen.style.display="none";
   if(container) container.style.display="flex";
   const accountPill=document.getElementById("accountPill");
-  if(accountPill) accountPill.textContent="⚡ Open Access";
+  if(accountPill) accountPill.textContent="👤 " + loggedInUsername;
   loadChatHistory();
 }
 function toggleCreatorReset(){ return false; }
@@ -1478,8 +1593,7 @@ function loadChatHistory() {
     }
     renderHistory();
 }
-
-showAppDirect();
+window.addEventListener("DOMContentLoaded", checkLogin);
 </script>
 
 </body>
