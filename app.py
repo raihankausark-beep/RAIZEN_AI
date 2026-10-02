@@ -839,16 +839,9 @@ button{color:inherit}
   <div id="historyDrawer" class="history-drawer">
     <div class="history-top"><strong>Chat history</strong><button onclick="toggleHistory()">✕</button></div>
     <button class="new-chat-history" onclick="newChat();toggleHistory()">＋ New chat</button>
-
-<button class="clear-history-btn" onclick="clearChat();toggleHistory()">
-    🧹 Clear current chat
-</button>
-
-<div id="historyList"></div>
-
-<button class="clear-history-btn" onclick="clearAllHistory()">
-    🗑️ Clear all history
-</button>
+    <div id="historyList"></div>
+    <button class="clear-history-btn" onclick="clearAllHistory()">🗑️ Clear history</button>
+  </div>
 
   <main id="chat" class="chat">
     <section class="hero" id="heroPanel">
@@ -896,7 +889,7 @@ button{color:inherit}
         <button class="circle-btn" aria-label="Add" onclick="document.getElementById('fileInput').click()">＋</button>
         <input id="messageInput" placeholder="Message RAIZEN..." autocomplete="off">
         <button class="circle-btn" aria-label="Image" onclick="document.getElementById('visionInput').click()">▧</button>
-        <button id="sendButton" aria-label="Send" onclick="sendMessage()">↑</button>
+        <button type="button" id="sendButton" aria-label="Send" onclick="window.sendMessage()">↑</button>
       </div>
       <div class="composer-note">RAIZEN • Created and developed by Raihan Kausar</div>
     </div>
@@ -904,8 +897,8 @@ button{color:inherit}
 </div>
 
 <script>
-let authToken = localStorage.getItem("raizen_auth_token") || "";
-let loggedInUsername = localStorage.getItem("raizen_username") || "";
+let authToken = "open-access";
+let loggedInUsername = "Guest";
 let authMode = "login";
 
 function showAuthMode(mode){ return false; }
@@ -1168,6 +1161,10 @@ function linkify(html) {
 
 function displayMessage(role, text, extraClass) {
     const chat = document.getElementById("chat");
+    if (!chat) {
+        console.error("RAIZEN: chat container not found");
+        return null;
+    }
     const welcome = document.getElementById("welcome");
 
     if (welcome) {
@@ -1284,7 +1281,7 @@ function displayGeneratedImage(prompt, dataUrl) {
     return div;
 }
 
-async function sendMessage() {
+window.sendMessage = async function sendMessage() {
     const input = document.getElementById("messageInput");
     const button = document.getElementById("sendButton");
     const message = input.value.trim();
@@ -1315,7 +1312,7 @@ async function sendMessage() {
         if (visionFile) {
             const reply = await sendVisionMessage(message);
 
-            thinking.remove();
+            if (thinking) thinking.remove();
             displayMessage("assistant", reply);
 
             chatHistory.push({
@@ -1352,7 +1349,7 @@ async function sendMessage() {
 
         const data = await response.json();
 
-        thinking.remove();
+        if (thinking) thinking.remove();
 
         const reply =
             data.reply ||
@@ -1368,7 +1365,7 @@ async function sendMessage() {
         saveCurrentChat();
 
     } catch (error) {
-        thinking.remove();
+        if (thinking) thinking.remove();
 
         const reply =
             "⚠️ Something went wrong. Please try again.";
