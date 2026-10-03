@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 from fastapi import FastAPI, Request, UploadFile, File, Form
 from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, JSONResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
 import psycopg
@@ -48,8 +48,7 @@ async def auth_callback(request: Request):
         "name": user.get("name"),
         "email": user.get("email"),
         "picture": user.get("picture"),
-    }
-
+}
     return RedirectResponse(url="/")
 
 
@@ -64,10 +63,8 @@ async def sitemap():
 
     return Response(
         content=xml,
-        media_type="application/xml",
+        media_type="application/xml"
     )
-
-
 @app.get("/robots.txt")
 async def robots():
     return Response(
@@ -76,10 +73,8 @@ Allow: /
 
 Sitemap: https://raizen-ai.onrender.com/sitemap.xml
 """,
-        media_type="text/plain",
+        media_type="text/plain"
     )
-
-
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
@@ -114,7 +109,12 @@ async def auth_user(request: Request):
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT username FROM raizen_users WHERE username_key = %s",
+                    """SELECT u.username,
+                              COALESCE(c.is_active, TRUE) AS is_active
+                       FROM raizen_users u
+                       LEFT JOIN raizen_user_controls c
+                         ON c.username_key = u.username_key
+                       WHERE u.username_key = %s""",
                     (username,)
                 )
                 existing = cur.fetchone()
@@ -136,6 +136,19 @@ async def auth_user(request: Request):
                             datetime.now(timezone.utc)
                         )
                     )
+                    cur.execute(
+                        """INSERT INTO raizen_user_controls
+                           (username_key, is_active, updated_at)
+                           VALUES (%s, TRUE, NOW())
+                           ON CONFLICT (username_key) DO NOTHING""",
+                        (username,)
+                    )
+                elif not existing["is_active"]:
+                    return {
+                        "ok": False,
+                        "user": None,
+                        "message": "This RAIZEN account has been deactivated by the administrator."
+                    }
 
             conn.commit()
 
@@ -165,7 +178,6 @@ oauth.register(
         "scope": "openid profile email",
     },
 )
-
 HF_TOKEN = os.getenv("HF_TOKEN")
 MODEL = "zai-org/GLM-5.3-Flash"
 
@@ -187,6 +199,7 @@ image_client = InferenceClient(api_key=HF_TOKEN)
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+ADMIN_EMAIL = (os.getenv("ADMIN_EMAIL") or "").strip().lower()
 AUTH_TOKEN_TTL = 60 * 60 * 24 * 7
 
 
@@ -223,6 +236,13 @@ def init_database():
                         token_hash TEXT PRIMARY KEY,
                         username_key TEXT NOT NULL REFERENCES raizen_users(username_key) ON DELETE CASCADE,
                         expires_at TIMESTAMPTZ NOT NULL
+                    )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS raizen_user_controls (
+                        username_key TEXT PRIMARY KEY REFERENCES raizen_users(username_key) ON DELETE CASCADE,
+                        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                     )
                 """)
                 cur.execute("DELETE FROM raizen_sessions WHERE expires_at < NOW()")
@@ -317,8 +337,11 @@ def get_authenticated_username(token):
                     FROM raizen_sessions s
                     JOIN raizen_users u
                       ON u.username_key = s.username_key
+                    LEFT JOIN raizen_user_controls c
+                      ON c.username_key = u.username_key
                     WHERE s.token_hash = %s
                       AND s.expires_at > NOW()
+                      AND COALESCE(c.is_active, TRUE) = TRUE
                     """,
                     (hash_token(token),)
                 )
@@ -1065,8 +1088,7 @@ button{color:inherit}
       <div class="brand-pill"><span>✦</span> RAIZEN</div>
     </div>
     <div class="top-right">
-      <button class="icon-btn" aria-label="New chat" title="New chat" onclick="newChat()">◌</button>
-      <button class="icon-btn" aria-label="Clear current chat" title="Clear current chat" onclick="clearCurrentChat()">🗑️</button>
+      <button class="icon-btn" aria-label="New chat" onclick="newChat()">◌</button>
       <div class="account-wrap">
   <button id="accountPill" class="account-pill" onclick="toggleAccountMenu()">
     <img id="accountAvatar" src="" alt="Account">
@@ -1082,7 +1104,6 @@ button{color:inherit}
       </div>
     </div>
 
-    <button id="adminDashboardBtn" style="display:none" onclick="window.location.href='/admin'">🛠️ Admin Dashboard</button>
     <button onclick="logout()">🚪 Logout</button>
   </div>
 </div>
@@ -1189,17 +1210,6 @@ async function checkLogin(){
             if (accountName) accountName.textContent = data.user.name || loggedInUsername;
             if (menuName) menuName.textContent = data.user.name || "User";
             if (menuEmail) menuEmail.textContent = data.user.email || loggedInUsername;
-
-            try {
-                const adminResponse = await fetch("/admin/check");
-                const adminData = await adminResponse.json();
-                const adminButton = document.getElementById("adminDashboardBtn");
-                if (adminButton) {
-                    adminButton.style.display = adminData.is_admin ? "block" : "none";
-                }
-            } catch (adminError) {
-                console.warn("ADMIN CHECK ERROR:", adminError);
-            }
 
             showAppAfterLogin();
         } else {
@@ -1712,28 +1722,11 @@ window.sendMessage = async function sendMessage() {
     input.focus();
 }
 
-function clearCurrentChat() {
-    if (!chatHistory.length && !currentChatId) return;
-
-    if (!confirm("Clear the current chat? This will remove its messages.")) return;
-
-    // Remove only the currently open chat from saved history.
-    if (currentChatId) {
-        savedChats = savedChats.filter(c => c.id !== currentChatId);
-        saveChats();
-    }
-
+function clearChat() {
     chatHistory = [];
     currentChatId = null;
     localStorage.removeItem("raizen_chat_history_" + loggedInUsername.toLowerCase());
-
     document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
-    renderHistory();
-}
-
-// Backward-compatible alias for any older code that calls clearChat().
-function clearChat() {
-    clearCurrentChat();
 }
 
 function newChat() {
@@ -1790,149 +1783,6 @@ window.addEventListener("DOMContentLoaded", checkLogin);
 """
 
 
-ADMIN_DASHBOARD_HTML = r"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RAIZEN Admin Dashboard</title>
-<style>
-:root{--bg:#080808;--panel:#151515;--panel2:#1d1d1d;--line:#2c2c2c;--text:#f5f5f5;--muted:#999;--accent:#4d8dff;--danger:#ff5f57}
-*{box-sizing:border-box}
-body{margin:0;background:radial-gradient(circle at top,#151b2b 0,#080808 45%);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;min-height:100vh}
-.wrap{max-width:1200px;margin:0 auto;padding:28px 20px 50px}
-.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:26px}
-.brand{font-size:28px;font-weight:800;letter-spacing:.5px}.brand span{color:var(--accent)}
-.sub{color:var(--muted);font-size:13px;margin-top:5px}
-.actions{display:flex;gap:10px;flex-wrap:wrap}.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);padding:10px 14px;border-radius:10px;text-decoration:none;cursor:pointer}.btn:hover{border-color:#555;background:var(--panel2)}
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px}
-.card{background:rgba(21,21,21,.92);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 12px 35px rgba(0,0,0,.2)}
-.label{color:var(--muted);font-size:13px}.value{font-size:30px;font-weight:800;margin-top:8px}
-.table-card{padding:0;overflow:hidden}.table-head{padding:18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:650px}th,td{text-align:left;padding:14px 18px;border-bottom:1px solid var(--line);font-size:14px}th{color:#aaa;font-weight:600;background:#111}td{color:#eee}.muted{color:var(--muted)}
-.note{margin-top:16px;color:#aaa;font-size:13px;line-height:1.6}.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:rgba(77,141,255,.12);color:#9ec0ff;font-size:12px}
-@media(max-width:800px){.grid{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}.wrap{padding:20px 14px 40px}}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <div class="top">
-    <div><div class="brand">RAIZEN <span>ADMIN</span></div><div class="sub">Creator control panel • Raihan Kausar</div></div>
-    <div class="actions"><button class="btn" onclick="loadDashboard()">↻ Refresh</button><a class="btn" href="/">← Back to RAIZEN</a><a class="btn" href="/logout">🚪 Logout</a></div>
-  </div>
-
-  <div class="grid">
-    <div class="card"><div class="label">Total registered users</div><div id="totalUsers" class="value">—</div></div>
-    <div class="card"><div class="label">Active sessions</div><div id="activeSessions" class="value">—</div></div>
-    <div class="card"><div class="label">Database status</div><div id="dbStatus" class="value" style="font-size:20px">Checking…</div></div>
-  </div>
-
-  <div class="card table-card">
-    <div class="table-head"><strong>Registered accounts</strong><span id="updated" class="badge">Loading…</span></div>
-    <div class="table-wrap">
-      <table><thead><tr><th>Username / Email</th><th>Created</th></tr></thead><tbody id="usersBody"><tr><td colspan="2" class="muted">Loading…</td></tr></tbody></table>
-    </div>
-  </div>
-
-  <div class="note">
-    Chat messages are currently stored in each user's browser localStorage, so this dashboard does not expose private chat content.
-    User and session statistics come from RAIZEN's PostgreSQL database.
-  </div>
-</div>
-<script>
-async function loadDashboard(){
-  try{
-    const res=await fetch('/admin/data');
-    const data=await res.json();
-    if(!data.ok){
-      document.body.innerHTML='<div style="padding:40px;font-family:Arial;color:white;background:#080808;min-height:100vh"><h2>Admin access denied</h2><p>'+((data.message||'Authentication required.'))+'</p><a style="color:#7aa7ff" href="/">Back to RAIZEN</a></div>';
-      return;
-    }
-    document.getElementById('totalUsers').textContent=data.total_users;
-    document.getElementById('activeSessions').textContent=data.active_sessions;
-    document.getElementById('dbStatus').textContent=data.database_status;
-    document.getElementById('updated').textContent='Updated '+new Date().toLocaleTimeString();
-    const body=document.getElementById('usersBody');
-    body.innerHTML='';
-    if(!data.users.length){body.innerHTML='<tr><td colspan="2" class="muted">No users yet.</td></tr>';return;}
-    data.users.forEach(user=>{
-      const tr=document.createElement('tr');
-      const td1=document.createElement('td'); td1.textContent=user.username;
-      const td2=document.createElement('td'); td2.textContent=new Date(user.created_at).toLocaleString();
-      tr.append(td1,td2); body.appendChild(tr);
-    });
-  }catch(e){
-    document.getElementById('dbStatus').textContent='Unavailable';
-    document.getElementById('usersBody').innerHTML='<tr><td colspan="2" class="muted">Could not load dashboard data.</td></tr>';
-  }
-}
-loadDashboard();
-</script>
-</body>
-</html>
-"""
-
-def get_admin_email():
-    return (os.getenv("ADMIN_EMAIL") or "").strip().lower()
-
-def is_admin_session(request: Request):
-    user = request.session.get("user") or {}
-    email = (user.get("email") or "").strip().lower()
-    admin_email = get_admin_email()
-    return bool(email and admin_email and email == admin_email)
-
-@app.get("/admin/check")
-async def admin_check(request: Request):
-    return {"is_admin": is_admin_session(request)}
-
-@app.get("/admin", response_class=HTMLResponse)
-async def admin_page(request: Request):
-    if not is_admin_session(request):
-        return HTMLResponse(
-            content="<h2 style='font-family:Arial;padding:40px'>Admin access denied. <a href='/'>Back to RAIZEN</a></h2>",
-            status_code=403
-        )
-    return HTMLResponse(content=ADMIN_DASHBOARD_HTML)
-
-@app.get("/admin/data")
-async def admin_data(request: Request):
-    if not is_admin_session(request):
-        return {"ok": False, "message": "Admin access denied."}
-
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) AS count FROM raizen_users")
-                total_users = cur.fetchone()["count"]
-
-                cur.execute("DELETE FROM raizen_sessions WHERE expires_at < NOW()")
-                cur.execute("SELECT COUNT(*) AS count FROM raizen_sessions WHERE expires_at > NOW()")
-                active_sessions = cur.fetchone()["count"]
-
-                cur.execute(
-                    "SELECT username, created_at FROM raizen_users ORDER BY created_at DESC LIMIT 100"
-                )
-                rows = cur.fetchall()
-            conn.commit()
-
-        return {
-            "ok": True,
-            "total_users": int(total_users),
-            "active_sessions": int(active_sessions),
-            "database_status": "Connected",
-            "users": [
-                {"username": row["username"], "created_at": row["created_at"].isoformat()}
-                for row in rows
-            ]
-        }
-    except Exception as error:
-        print("ADMIN DATA ERROR:", error)
-        return {
-            "ok": False,
-            "message": "Could not load admin data."
-        }
-
-
 @app.get("/", response_class=HTMLResponse)
 async def home():
     return HTMLResponse(content=HTML)
@@ -1976,13 +1826,21 @@ async def login(request: AuthRequest):
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT username, salt, password_hash FROM raizen_users WHERE username_key = %s",
+                    """SELECT u.username, u.salt, u.password_hash,
+                              COALESCE(c.is_active, TRUE) AS is_active
+                       FROM raizen_users u
+                       LEFT JOIN raizen_user_controls c
+                         ON c.username_key = u.username_key
+                       WHERE u.username_key = %s""",
                     (username.lower(),)
                 )
                 user = cur.fetchone()
 
         if not user or not verify_password(request.password, user["salt"], user["password_hash"]):
             return {"ok": False, "message": "Invalid username or password."}
+
+        if not user["is_active"]:
+            return {"ok": False, "message": "This account has been deactivated by the administrator."}
 
         token = create_auth_token(user["username"])
         return {"ok": True, "message": "Login successful.", "username": user["username"], "token": token}
@@ -2002,6 +1860,253 @@ async def logout(token: str = ""):
         except Exception as error:
             print("LOGOUT ERROR:", error)
     return {"ok": True}
+
+
+
+def is_admin_request(request: Request):
+    user = request.session.get("user") or {}
+    email = (user.get("email") or "").strip().lower()
+    return bool(ADMIN_EMAIL and email and email == ADMIN_EMAIL)
+
+
+def admin_denied():
+    return JSONResponse(
+        {"ok": False, "message": "Admin access denied."},
+        status_code=403
+    )
+
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_page(request: Request):
+    if not is_admin_request(request):
+        return RedirectResponse(url="/")
+
+    html = r"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAIZEN Admin</title>
+<style>
+:root{--bg:#050505;--panel:#111;--line:#292929;--text:#f5f5f5;--muted:#9a9a9a;--blue:#4d8dff;--red:#ff5c67;--green:#35d07f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+.wrap{max-width:1150px;margin:auto;padding:28px 18px 50px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:24px}
+.brand{font-size:25px;font-weight:800}.brand span{color:var(--blue)}
+.actions{display:flex;gap:8px}
+button{border:1px solid var(--line);background:#171717;color:#fff;border-radius:10px;padding:10px 14px;cursor:pointer}
+button:hover{background:#222}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px}
+.label{color:var(--muted);font-size:12px}.value{font-size:28px;font-weight:800;margin-top:8px}
+.table-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.table-head{padding:18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:13px 14px;border-bottom:1px solid #202020;font-size:13px}th{color:#aaa;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+.badge{display:inline-block;padding:5px 8px;border-radius:999px;font-size:11px}
+.active{background:rgba(53,208,127,.12);color:var(--green)}
+.inactive{background:rgba(255,92,103,.12);color:var(--red)}
+.manage{padding:7px 10px;font-size:12px}.deactivate{border-color:#553036;color:#ff8a92}.activate{border-color:#294b3a;color:#6ee7a4}
+.empty{text-align:center;color:#777;padding:35px}
+#status{color:#999;font-size:12px}
+@media(max-width:700px){.grid{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}table{min-width:760px}.table-card{overflow-x:auto}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="brand">⚡ <span>RAIZEN</span> Admin Dashboard</div>
+    <div class="actions">
+      <button onclick="loadUsers()">↻ Refresh</button>
+      <button onclick="location.href='/'">← RAIZEN</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card"><div class="label">Total users</div><div id="totalUsers" class="value">—</div></div>
+    <div class="card"><div class="label">Active users</div><div id="activeUsers" class="value">—</div></div>
+    <div class="card"><div class="label">Active sessions</div><div id="sessions" class="value">—</div></div>
+  </div>
+
+  <div class="table-card">
+    <div class="table-head">
+      <strong>User management</strong>
+      <span id="status">Loading...</span>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Account</th><th>Created</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody id="usersBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+async function loadUsers(){
+  const status=document.getElementById("status");
+  status.textContent="Loading...";
+  try{
+    const r=await fetch("/admin/api/users");
+    const data=await r.json();
+    if(!r.ok || !data.ok) throw new Error(data.message || "Could not load users.");
+
+    document.getElementById("totalUsers").textContent=data.total_users;
+    document.getElementById("activeUsers").textContent=data.active_users;
+    document.getElementById("sessions").textContent=data.active_sessions;
+
+    const body=document.getElementById("usersBody");
+    body.innerHTML="";
+    if(!data.users.length){
+      body.innerHTML='<tr><td colspan="4" class="empty">No users yet.</td></tr>';
+    }else{
+      data.users.forEach(u=>{
+        const tr=document.createElement("tr");
+        const created=new Date(u.created_at).toLocaleString();
+        const statusClass=u.is_active?"active":"inactive";
+        const statusText=u.is_active?"Active":"Deactivated";
+        const action=u.is_active
+          ? `<button class="manage deactivate" onclick="setUser('${encodeURIComponent(u.username_key)}',false)">Deactivate</button>`
+          : `<button class="manage activate" onclick="setUser('${encodeURIComponent(u.username_key)}',true)">Activate</button>`;
+        tr.innerHTML=
+          `<td>${escapeHtml(u.username)}</td>`+
+          `<td>${escapeHtml(created)}</td>`+
+          `<td><span class="badge ${statusClass}">${statusText}</span></td>`+
+          `<td>${action}</td>`;
+        body.appendChild(tr);
+      });
+    }
+    status.textContent="Updated just now";
+  }catch(e){
+    status.textContent=e.message;
+  }
+}
+
+async function setUser(key,active){
+  const action=active?"activate":"deactivate";
+  if(!confirm(`Are you sure you want to ${action} this account?`)) return;
+  try{
+    const r=await fetch("/admin/api/user-status",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({username_key:decodeURIComponent(key),is_active:active})
+    });
+    const data=await r.json();
+    if(!r.ok || !data.ok) throw new Error(data.message || "Action failed.");
+    await loadUsers();
+  }catch(e){ alert(e.message); }
+}
+
+function escapeHtml(value){
+  return String(value)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;")
+    .replace(/'/g,"&#039;");
+}
+loadUsers();
+</script>
+</body>
+</html>
+"""
+    return HTMLResponse(content=html)
+
+
+@app.get("/admin/api/users")
+async def admin_users(request: Request):
+    if not is_admin_request(request):
+        return admin_denied()
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT
+                        u.username_key,
+                        u.username,
+                        u.created_at,
+                        COALESCE(c.is_active, TRUE) AS is_active
+                    FROM raizen_users u
+                    LEFT JOIN raizen_user_controls c
+                      ON c.username_key = u.username_key
+                    ORDER BY u.created_at DESC
+                """)
+                users = cur.fetchall()
+
+                cur.execute("""
+                    SELECT COUNT(*) AS count
+                    FROM raizen_sessions s
+                    LEFT JOIN raizen_user_controls c
+                      ON c.username_key = s.username_key
+                    WHERE s.expires_at > NOW()
+                      AND COALESCE(c.is_active, TRUE) = TRUE
+                """)
+                active_sessions = cur.fetchone()["count"]
+
+        active_users = sum(1 for u in users if u["is_active"])
+        return {
+            "ok": True,
+            "total_users": len(users),
+            "active_users": active_users,
+            "active_sessions": active_sessions,
+            "users": [
+                {
+                    "username_key": u["username_key"],
+                    "username": u["username"],
+                    "created_at": u["created_at"].isoformat(),
+                    "is_active": bool(u["is_active"])
+                }
+                for u in users
+            ]
+        }
+    except Exception as error:
+        print("ADMIN USERS ERROR:", error)
+        return {"ok": False, "message": "Could not load user management data."}
+
+
+class AdminUserStatusRequest(BaseModel):
+    username_key: str
+    is_active: bool
+
+
+@app.post("/admin/api/user-status")
+async def admin_user_status(request: Request, body: AdminUserStatusRequest):
+    if not is_admin_request(request):
+        return admin_denied()
+
+    username_key = body.username_key.strip().lower()
+    if not username_key:
+        return {"ok": False, "message": "Invalid account."}
+
+    if ADMIN_EMAIL and username_key == ADMIN_EMAIL:
+        return {"ok": False, "message": "The admin account cannot be deactivated."}
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO raizen_user_controls
+                       (username_key, is_active, updated_at)
+                       VALUES (%s, %s, NOW())
+                       ON CONFLICT (username_key)
+                       DO UPDATE SET is_active = EXCLUDED.is_active,
+                                     updated_at = NOW()""",
+                    (username_key, body.is_active)
+                )
+
+                if not body.is_active:
+                    cur.execute(
+                        "DELETE FROM raizen_sessions WHERE username_key = %s",
+                        (username_key,)
+                    )
+            conn.commit()
+
+        return {
+            "ok": True,
+            "message": "Account activated." if body.is_active else "Account deactivated."
+        }
+    except Exception as error:
+        print("ADMIN USER STATUS ERROR:", error)
+        return {"ok": False, "message": "Could not update account status."}
 
 
 @app.get("/creator-dashboard")
