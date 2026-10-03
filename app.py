@@ -195,7 +195,7 @@ vision_client = InferenceClient(api_key=HF_TOKEN)
 
 IMAGE_MODEL = "black-forest-labs/FLUX.1-schnell"
 
-image_client = InferenceClient(provider="fal-ai", api_key=HF_TOKEN)
+image_client = InferenceClient(api_key=HF_TOKEN)
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -1535,17 +1535,22 @@ function usePrompt(text) {
     input.focus();
 }
 
-async function generateImageFromInput() {
-    const input = document.getElementById("messageInput");
+function looksLikeImageRequest(text) {
+    const value = (text || "").toLowerCase().trim();
+
+    const imagePatterns = [
+        /\b(create|generate|make|draw|design|render)\b.*\b(image|picture|photo|poster|logo|wallpaper|illustration|artwork|thumbnail|banner|portrait|icon)\b/,
+        /\b(image|picture|photo|poster|logo|wallpaper|illustration|artwork|thumbnail|banner|portrait|icon)\b.*\b(create|generate|make|draw|design|render)\b/
+    ];
+
+    return imagePatterns.some(pattern => pattern.test(value));
+}
+
+async function generateImageFromPrompt(prompt) {
     const button = document.getElementById("sendButton");
-    const prompt = input.value.trim();
+    const cleanPrompt = (prompt || "").trim();
 
-    if (!prompt || button.disabled) return;
-
-    input.value = "";
-    button.disabled = true;
-
-    displayMessage("user", prompt);
+    if (!cleanPrompt) return;
 
     const thinking = displayMessage(
         "assistant",
@@ -1557,38 +1562,63 @@ async function generateImageFromInput() {
         const response = await fetch("/generate-image", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({token: authToken, prompt: prompt})
+            body: JSON.stringify({
+                token: authToken,
+                prompt: cleanPrompt
+            })
         });
 
         const data = await response.json();
 
-        thinking.remove();
+        if (thinking) thinking.remove();
 
         if (data.error) {
-            displayMessage("assistant", data.error);
-            chatHistory.push({role: "user", content: prompt});
-            chatHistory.push({role: "assistant", content: data.error});
-        } else {
-            displayGeneratedImage(prompt, data.image);
-            chatHistory.push({role: "user", content: prompt});
+            displayMessage("assistant", "⚠️ " + data.error);
+            chatHistory.push({role: "assistant", content: "⚠️ " + data.error});
+        } else if (data.image) {
+            displayGeneratedImage(cleanPrompt, data.image);
             chatHistory.push({
                 role: "assistant",
-                content: "🎨 Generated an image for: " + prompt
+                content: "[Generated image: " + cleanPrompt + "]"
+            });
+        } else {
+            displayMessage("assistant", "⚠️ No image was returned by the image service.");
+            chatHistory.push({
+                role: "assistant",
+                content: "⚠️ No image was returned by the image service."
             });
         }
 
         saveCurrentChat();
-    } catch (error) {
-        thinking.remove();
-        const msg = "⚠️ Image generation failed. Please try again.";
-        displayMessage("assistant", msg);
-        chatHistory.push({role: "user", content: prompt});
-        chatHistory.push({role: "assistant", content: msg});
-        saveCurrentChat();
-    }
 
-    button.disabled = false;
-    input.focus();
+    } catch (error) {
+        if (thinking) thinking.remove();
+        const message = "⚠️ Image generation failed: " + error.message;
+        displayMessage("assistant", message);
+        chatHistory.push({role: "assistant", content: message});
+        saveCurrentChat();
+    } finally {
+        if (button) button.disabled = false;
+        const input = document.getElementById("messageInput");
+        if (input) input.focus();
+    }
+}
+
+async function generateImageFromInput() {
+    const input = document.getElementById("messageInput");
+    const button = document.getElementById("sendButton");
+    const prompt = input.value.trim();
+
+    if (!prompt || button.disabled) return;
+
+    input.value = "";
+    button.disabled = true;
+
+    displayMessage("user", prompt);
+    chatHistory.push({role: "user", content: prompt});
+    saveCurrentChat();
+
+    await generateImageFromPrompt(prompt);
 }
 
 function displayGeneratedImage(prompt, dataUrl) {
@@ -1654,6 +1684,15 @@ window.sendMessage = async function sendMessage() {
     );
 
     try {
+        // Automatically route natural-language image requests to the image generator.
+        // Examples: "create a poster of applied mathematics",
+        // "generate an image of a cat", "make a logo for my project".
+        if (looksLikeImageRequest(message)) {
+            if (thinking) thinking.remove();
+            await generateImageFromPrompt(message);
+            return;
+        }
+
         if (visionFile) {
             const reply = await sendVisionMessage(message);
 
@@ -2485,9 +2524,9 @@ async def generate_image(request: ImageRequest):
         }
 
     except Exception as error:
-        print("IMAGE GENERATION ERROR:", error)
+        print("IMAGE GENERATION ERROR:", repr(error))
         return {
-            "error": "Image generation is temporarily unavailable. Please try again."
+            "error": f"Image generation failed: {type(error).__name__}: {str(error)[:500]}"
         }
 
 
