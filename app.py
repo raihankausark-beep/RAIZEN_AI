@@ -1065,7 +1065,8 @@ button{color:inherit}
       <div class="brand-pill"><span>✦</span> RAIZEN</div>
     </div>
     <div class="top-right">
-      <button class="icon-btn" aria-label="New chat" onclick="newChat()">◌</button>
+      <button class="icon-btn" aria-label="New chat" title="New chat" onclick="newChat()">◌</button>
+      <button class="icon-btn" aria-label="Clear current chat" title="Clear current chat" onclick="clearCurrentChat()">🗑️</button>
       <div class="account-wrap">
   <button id="accountPill" class="account-pill" onclick="toggleAccountMenu()">
     <img id="accountAvatar" src="" alt="Account">
@@ -1700,11 +1701,28 @@ window.sendMessage = async function sendMessage() {
     input.focus();
 }
 
-function clearChat() {
+function clearCurrentChat() {
+    if (!chatHistory.length && !currentChatId) return;
+
+    if (!confirm("Clear the current chat? This will remove its messages.")) return;
+
+    // Remove only the currently open chat from saved history.
+    if (currentChatId) {
+        savedChats = savedChats.filter(c => c.id !== currentChatId);
+        saveChats();
+    }
+
     chatHistory = [];
     currentChatId = null;
     localStorage.removeItem("raizen_chat_history_" + loggedInUsername.toLowerCase());
+
     document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
+    renderHistory();
+}
+
+// Backward-compatible alias for any older code that calls clearChat().
+function clearChat() {
+    clearCurrentChat();
 }
 
 function newChat() {
