@@ -48,9 +48,12 @@ async def auth_callback(request: Request):
         "name": user.get("name"),
         "email": user.get("email"),
         "picture": user.get("picture"),
-}
+    }
+
     return RedirectResponse(url="/")
-    @app.get("/sitemap.xml")
+
+
+@app.get("/sitemap.xml")
 async def sitemap():
     xml = """<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -61,9 +64,11 @@ async def sitemap():
 
     return Response(
         content=xml,
-        media_type="application/xml"
+        media_type="application/xml",
     )
-    @app.get("/robots.txt")
+
+
+@app.get("/robots.txt")
 async def robots():
     return Response(
         content="""User-agent: *
@@ -71,8 +76,10 @@ Allow: /
 
 Sitemap: https://raizen-ai.onrender.com/sitemap.xml
 """,
-        media_type="text/plain"
+        media_type="text/plain",
     )
+
+
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
@@ -158,15 +165,6 @@ oauth.register(
         "scope": "openid profile email",
     },
 )
-from fastapi.responses import PlainTextResponse
-
-@app.get("/robots.txt", response_class=PlainTextResponse)
-def robots():
-    return """User-agent: *
-Allow: /
-
-Sitemap: https://raizen-ai.onrender.com/sitemap.xml
-"""
 
 HF_TOKEN = os.getenv("HF_TOKEN")
 MODEL = "zai-org/GLM-5.3-Flash"
