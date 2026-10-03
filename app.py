@@ -2488,7 +2488,7 @@ async def generate_image(request: ImageRequest):
     except Exception as error:
         print("IMAGE GENERATION ERROR:", error)
         return {
-            "error": "Image generation is temporarily unavailable. Please try again."
+            "error": f"Image generation failed: {type(error).__name__}: {str(error)[:500]}"
         }
 
 
