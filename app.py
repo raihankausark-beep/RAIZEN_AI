@@ -5,6 +5,7 @@ import base64
 import hashlib
 import secrets
 import time
+from fastapi.responses import RedirectResponse, Response
 from urllib.parse import urlencode
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -13,7 +14,6 @@ from io import BytesIO
 import xml.etree.ElementTree as ET
 
 from fastapi import FastAPI, Request, UploadFile, File, Form
-from starlette.responses import RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
 from fastapi.responses import HTMLResponse, PlainTextResponse
@@ -50,6 +50,29 @@ async def auth_callback(request: Request):
         "picture": user.get("picture"),
 }
     return RedirectResponse(url="/")
+    @app.get("/sitemap.xml")
+async def sitemap():
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+        <loc>https://raizen-ai.onrender.com/</loc>
+    </url>
+</urlset>"""
+
+    return Response(
+        content=xml,
+        media_type="application/xml"
+    )
+    @app.get("/robots.txt")
+async def robots():
+    return Response(
+        content="""User-agent: *
+Allow: /
+
+Sitemap: https://raizen-ai.onrender.com/sitemap.xml
+""",
+        media_type="text/plain"
+    )
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
