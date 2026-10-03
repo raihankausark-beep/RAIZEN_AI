@@ -970,7 +970,7 @@ button{color:inherit}
 .menu-icon{font-size:25px;line-height:1}
 .brand-pill{height:44px;padding:0 18px;border-radius:999px;background:#182b43;color:#54a2ff;display:flex;align-items:center;gap:7px;font-size:19px;font-weight:800;letter-spacing:.1px}
 .brand-pill span{font-size:17px}
-.account-pill{display:none}
+.account-pill{display:flex;align-items:center;gap:8px}
 .status{display:none}
 
 /* Main chat */
@@ -1136,82 +1136,83 @@ let authMode = "login";
 
 function showAuthMode(mode){ return false; }
 function submitAuth(event){ if(event) event.preventDefault(); return false; }
+
 async function checkLogin(){
     try {
         const response = await fetch("/auth/user");
         const data = await response.json();
 
         if (data.ok && data.user) {
-    authToken = data.token;
+            authToken = data.token || "";
 
-    loggedInUsername =
-        data.username ||
-        data.user.email ||
-        data.user.name ||
-        "User";
+            loggedInUsername =
+                data.username ||
+                data.user.email ||
+                data.user.name ||
+                "User";
 
-    const avatar =
-        data.user.picture ||
-        "https://ui-avatars.com/api/?name=" +
-        encodeURIComponent(loggedInUsername);
+            const avatar =
+                data.user.picture ||
+                "https://ui-avatars.com/api/?name=" +
+                encodeURIComponent(loggedInUsername);
 
-    document.getElementById("accountAvatar").src = avatar;
-    document.getElementById("menuAvatar").src = avatar;
+            const accountAvatar = document.getElementById("accountAvatar");
+            const menuAvatar = document.getElementById("menuAvatar");
+            const accountName = document.getElementById("accountName");
+            const menuName = document.getElementById("menuName");
+            const menuEmail = document.getElementById("menuEmail");
 
-    document.getElementById("accountName").textContent =
-        data.user.name || loggedInUsername;
-
-    document.getElementById("menuName").textContent =
-        data.user.name || "User";
-
-    document.getElementById("menuEmail").textContent =
-        data.user.email || loggedInUsername;
-
-    showAppAfterLogin();
-}
-function toggleAccountMenu(){
-    const menu = document.getElementById("accountMenu");
-
-    if(menu){
-        menu.classList.toggle("show");
-    }
-}
-
-document.addEventListener("click", function(event){
-    const wrap = document.querySelector(".account-wrap");
-    const menu = document.getElementById("accountMenu");
-
-    if(wrap && menu && !wrap.contains(event.target)){
-        menu.classList.remove("show");
-    }
-});
+            if (accountAvatar) accountAvatar.src = avatar;
+            if (menuAvatar) menuAvatar.src = avatar;
+            if (accountName) accountName.textContent = data.user.name || loggedInUsername;
+            if (menuName) menuName.textContent = data.user.name || "User";
+            if (menuEmail) menuEmail.textContent = data.user.email || loggedInUsername;
 
             showAppAfterLogin();
         } else {
             window.location.href = "/login";
         }
     } catch (error) {
+        console.error("AUTH CHECK ERROR:", error);
         window.location.href = "/login";
     }
 }
 
+function toggleAccountMenu(){
+    const menu = document.getElementById("accountMenu");
+    if (menu) menu.classList.toggle("show");
+}
+
+document.addEventListener("click", function(event){
+    const wrap = document.querySelector(".account-wrap");
+    const menu = document.getElementById("accountMenu");
+    if (wrap && menu && !wrap.contains(event.target)) {
+        menu.classList.remove("show");
+    }
+});
+
 function showLoginScreen(){
     window.location.href = "/login";
 }
-function showAppAfterLogin(){ 
-     showAppDirect(); }
-function showAppDirect(){
-  const authScreen=document.getElementById("authScreen");
-  const container=document.querySelector(".container");
-  if(authScreen) authScreen.style.display="none";
-  if(container) container.style.display="flex";
-  const accountPill=document.getElementById("accountPill");
-  if(accountPill) accountPill.textContent="👤 " + loggedInUsername;
-  loadChatHistory();
+
+function showAppAfterLogin(){
+    showAppDirect();
 }
+
+function showAppDirect(){
+    const authScreen = document.getElementById("authScreen");
+    const container = document.querySelector(".container");
+    if (authScreen) authScreen.style.display = "none";
+    if (container) container.style.display = "flex";
+    loadChatHistory();
+}
+
 function toggleCreatorReset(){ return false; }
 function resetCreatorPassword(){ return false; }
-async function logout(){ showAppDirect(); }
+
+async function logout(){
+    window.location.href = "/logout";
+}
 
 let chatHistory = [];
 let savedChats = [];
