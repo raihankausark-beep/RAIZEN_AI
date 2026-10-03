@@ -876,6 +876,83 @@ HTML = r"""
 <meta name="theme-color" content="#000000">
 <title>RAIZEN AI</title>
 <style>
+.account-wrap {
+    position: relative;
+}
+
+.account-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.06);
+    color: white;
+    padding: 7px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+}
+
+.account-pill img {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.account-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 48px;
+    width: 260px;
+    background: #151515;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 16px;
+    padding: 12px;
+    z-index: 9999;
+    box-shadow: 0 15px 40px rgba(0,0,0,0.45);
+}
+
+.account-menu.show {
+    display: block;
+}
+
+.account-menu-user {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px;
+    margin-bottom: 8px;
+}
+
+.account-menu-user img {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.account-menu-user strong,
+.account-menu-user small {
+    display: block;
+}
+
+.account-menu-user small {
+    color: #999;
+    margin-top: 3px;
+    font-size: 12px;
+}
+
+.account-menu button {
+    width: 100%;
+    border: 0;
+    background: rgba(255,255,255,0.06);
+    color: white;
+    padding: 10px;
+    border-radius: 10px;
+    cursor: pointer;
+    text-align: left;
+}
 :root{--bg:#000;--panel:#171717;--panel2:#202020;--text:#f5f5f5;--muted:#9b9b9b;--line:#2b2b2b;--accent:#4d8dff}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;width:100%;height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
@@ -968,7 +1045,26 @@ button{color:inherit}
     </div>
     <div class="top-right">
       <button class="icon-btn" aria-label="New chat" onclick="newChat()">◌</button>
-      <span id="accountPill" class="account-pill">⚡ Open Access</span>
+      <div class="account-wrap">
+  <button id="accountPill" class="account-pill" onclick="toggleAccountMenu()">
+    <img id="accountAvatar" src="" alt="Account">
+    <span id="accountName">Account</span>
+  </button>
+
+  <div id="accountMenu" class="account-menu">
+    <div class="account-menu-user">
+      <img id="menuAvatar" src="" alt="Profile">
+      <div>
+        <strong id="menuName">User</strong>
+        <small id="menuEmail">Loading...</small>
+      </div>
+    </div>
+
+    <button onclick="logout()">🚪 Logout</button>
+  </div>
+</div>
+
+<span class="status">AI ONLINE</span>
       <span class="status">AI ONLINE</span>
     </div>
   </header>
@@ -1046,12 +1142,49 @@ async function checkLogin(){
         const data = await response.json();
 
         if (data.ok && data.user) {
-            authToken = data.token;
-            loggedInUsername = 
-                data.username ||
-                data.user.email ||
-                data.user.name
-                "User";
+    authToken = data.token;
+
+    loggedInUsername =
+        data.username ||
+        data.user.email ||
+        data.user.name ||
+        "User";
+
+    const avatar =
+        data.user.picture ||
+        "https://ui-avatars.com/api/?name=" +
+        encodeURIComponent(loggedInUsername);
+
+    document.getElementById("accountAvatar").src = avatar;
+    document.getElementById("menuAvatar").src = avatar;
+
+    document.getElementById("accountName").textContent =
+        data.user.name || loggedInUsername;
+
+    document.getElementById("menuName").textContent =
+        data.user.name || "User";
+
+    document.getElementById("menuEmail").textContent =
+        data.user.email || loggedInUsername;
+
+    showAppAfterLogin();
+}
+function toggleAccountMenu(){
+    const menu = document.getElementById("accountMenu");
+
+    if(menu){
+        menu.classList.toggle("show");
+    }
+}
+
+document.addEventListener("click", function(event){
+    const wrap = document.querySelector(".account-wrap");
+    const menu = document.getElementById("accountMenu");
+
+    if(wrap && menu && !wrap.contains(event.target)){
+        menu.classList.remove("show");
+    }
+});
 
             showAppAfterLogin();
         } else {
