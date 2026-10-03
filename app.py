@@ -1033,6 +1033,7 @@ button{color:inherit}
 #sendButton{width:43px;height:43px;flex:0 0 43px;border:0;border-radius:50%;background:#4b8df8;color:#fff;display:grid;place-items:center;cursor:pointer;font-size:21px;font-weight:700}
 #sendButton:hover{filter:brightness(1.08)}
 #sendButton:disabled{opacity:.45;cursor:not-allowed}
+.message-actions{display:flex;gap:8px;margin-top:8px}.message-action-btn{border:1px solid #333;background:#181818;color:#ddd;border-radius:10px;padding:6px 10px;font-size:12px;cursor:pointer}.message-action-btn:hover{background:#252525}.stop-btn{display:none;min-width:43px;border:0;border-radius:50%;background:#d9534f;color:#fff;font-size:16px;cursor:pointer}.stop-btn.active{display:grid;place-items:center}.stop-btn:hover{filter:brightness(1.08)}
 .composer-note{text-align:center;color:#6f6f6f;font-size:10px;margin-top:7px}
 
 /* Hidden/secondary controls */
@@ -1144,6 +1145,7 @@ button{color:inherit}
       <div class="input-area">
         <button class="circle-btn" aria-label="Attach" title="Attach a file or image" onclick="document.getElementById('fileInput').click()">＋</button>
         <input id="messageInput" placeholder="Message RAIZEN... ask for anything" autocomplete="off">
+        <button type="button" id="stopButton" class="stop-btn" aria-label="Stop generating" title="Stop generating" onclick="stopGeneration()">■</button>
         <button type="button" id="sendButton" aria-label="Send" onclick="window.sendMessage()">↑</button>
       </div>
       <div class="composer-note">RAIZEN • One prompt. Just ask. RAIZEN decides what to do.</div>
@@ -1153,6 +1155,12 @@ button{color:inherit}
 
 <script>
 let authToken = "";
+let activeChatController = null;
+let activeThinkingMessage = null;
+let activeRequestType = "";
+let lastNormalUserMessage = "";
+let lastNormalAssistantMessage = null;
+let isRegenerating = false;
 let loggedInUsername = "";
 let authMode = "login";
 
@@ -1799,7 +1807,9 @@ window.sendMessage = async function sendMessage() {
     input.value = "";
     button.disabled = true;
 
-    displayMessage("user", message);
+    if (!isRegenerating) {
+        displayMessage("user", message);
+    }
 
     // If an image is attached, RAIZEN can either edit it or analyze it.
     // Edit instructions go to the image-editing model; analysis stays with Vision.
@@ -1818,11 +1828,14 @@ window.sendMessage = async function sendMessage() {
         return;
     }
 
-    chatHistory.push({
-        role: "user",
-        content: message
-    });
+    if (!isRegenerating) {
+        chatHistory.push({
+            role: "user",
+            content: message
+        });
+    }
 
+    lastNormalUserMessage = message;
     const thinking = displayMessage(
         "assistant",
         visionFile
@@ -1830,6 +1843,8 @@ window.sendMessage = async function sendMessage() {
             : "⚡ RAIZEN is thinking...",
         "thinking"
     );
+    activeThinkingMessage = thinking;
+    activeRequestType = visionFile ? "vision" : "chat";
 
     try {
         if (visionFile) {
@@ -1850,6 +1865,8 @@ window.sendMessage = async function sendMessage() {
         }
 
         const controller = new AbortController();
+        activeChatController = controller;
+        document.getElementById("stopButton").classList.add("active");
         const timeoutId = setTimeout(() => controller.abort(), 90000);
 
         let response;
@@ -1894,7 +1911,16 @@ window.sendMessage = async function sendMessage() {
             data.error ||
             "Sorry, I could not generate a response.";
 
-        displayMessage("assistant", reply);
+        lastNormalAssistantMessage = displayMessage("assistant", reply);
+        const actions = document.createElement("div");
+        actions.className = "message-actions";
+        const regen = document.createElement("button");
+        regen.className = "message-action-btn";
+        regen.type = "button";
+        regen.textContent = "↻ Regenerate";
+        regen.onclick = function() { regenerateLastResponse(); };
+        actions.appendChild(regen);
+        lastNormalAssistantMessage.appendChild(actions);
 
         chatHistory.push({
             role: "assistant",
@@ -1907,6 +1933,17 @@ window.sendMessage = async function sendMessage() {
         if (thinking) thinking.remove();
 
         console.error("RAIZEN CHAT ERROR:", error);
+
+        const wasStopped = error && error.name === "AbortError" && activeRequestType === "chat" && !document.getElementById("stopButton").classList.contains("active");
+        if (wasStopped) {
+            activeChatController = null;
+            activeThinkingMessage = null;
+            activeRequestType = "";
+            document.getElementById("stopButton").classList.remove("active");
+            document.getElementById("sendButton").disabled = false;
+            document.getElementById("messageInput").focus();
+            return;
+        }
 
         const reply = error && error.name === "AbortError"
             ? "⚠️ RAIZEN took too long to respond. Please try again."
@@ -1922,8 +1959,58 @@ window.sendMessage = async function sendMessage() {
         saveCurrentChat();
     }
 
+    activeChatController = null;
+    activeThinkingMessage = null;
+    activeRequestType = "";
+    document.getElementById("stopButton").classList.remove("active");
     button.disabled = false;
     input.focus();
+}
+
+function stopGeneration() {
+    const stopButton = document.getElementById("stopButton");
+    if (!stopButton.classList.contains("active")) return;
+
+    if (activeChatController) {
+        activeChatController.abort();
+    }
+
+    if (activeThinkingMessage) {
+        activeThinkingMessage.remove();
+    }
+
+    activeChatController = null;
+    activeThinkingMessage = null;
+    activeRequestType = "";
+    stopButton.classList.remove("active");
+    const sendButton = document.getElementById("sendButton");
+    sendButton.disabled = false;
+    document.getElementById("messageInput").focus();
+    displayMessage("assistant", "⏹️ Generation stopped.");
+}
+
+async function regenerateLastResponse() {
+    if (!lastNormalUserMessage || activeChatController) return;
+
+    // Remove the previous assistant reply from the visible chat.
+    if (lastNormalAssistantMessage) {
+        lastNormalAssistantMessage.remove();
+        lastNormalAssistantMessage = null;
+    }
+
+    // Remove the previous assistant reply from history.
+    if (chatHistory.length && chatHistory[chatHistory.length - 1].role === "assistant") {
+        chatHistory.pop();
+    }
+
+    const input = document.getElementById("messageInput");
+    input.value = lastNormalUserMessage;
+    isRegenerating = true;
+    try {
+        await window.sendMessage();
+    } finally {
+        isRegenerating = false;
+    }
 }
 
 function clearChat() {
