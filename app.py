@@ -1082,12 +1082,12 @@ button{color:inherit}
       </div>
     </div>
 
+    <button id="adminDashboardBtn" style="display:none" onclick="window.location.href='/admin'">🛠️ Admin Dashboard</button>
     <button onclick="logout()">🚪 Logout</button>
   </div>
 </div>
 
 <span class="status">AI ONLINE</span>
-      <span class="status">AI ONLINE</span>
     </div>
   </header>
 
@@ -1189,6 +1189,17 @@ async function checkLogin(){
             if (accountName) accountName.textContent = data.user.name || loggedInUsername;
             if (menuName) menuName.textContent = data.user.name || "User";
             if (menuEmail) menuEmail.textContent = data.user.email || loggedInUsername;
+
+            try {
+                const adminResponse = await fetch("/admin/check");
+                const adminData = await adminResponse.json();
+                const adminButton = document.getElementById("adminDashboardBtn");
+                if (adminButton) {
+                    adminButton.style.display = adminData.is_admin ? "block" : "none";
+                }
+            } catch (adminError) {
+                console.warn("ADMIN CHECK ERROR:", adminError);
+            }
 
             showAppAfterLogin();
         } else {
@@ -1777,6 +1788,149 @@ window.addEventListener("DOMContentLoaded", checkLogin);
 </body>
 </html>
 """
+
+
+ADMIN_DASHBOARD_HTML = r"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAIZEN Admin Dashboard</title>
+<style>
+:root{--bg:#080808;--panel:#151515;--panel2:#1d1d1d;--line:#2c2c2c;--text:#f5f5f5;--muted:#999;--accent:#4d8dff;--danger:#ff5f57}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(circle at top,#151b2b 0,#080808 45%);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;min-height:100vh}
+.wrap{max-width:1200px;margin:0 auto;padding:28px 20px 50px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:26px}
+.brand{font-size:28px;font-weight:800;letter-spacing:.5px}.brand span{color:var(--accent)}
+.sub{color:var(--muted);font-size:13px;margin-top:5px}
+.actions{display:flex;gap:10px;flex-wrap:wrap}.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);padding:10px 14px;border-radius:10px;text-decoration:none;cursor:pointer}.btn:hover{border-color:#555;background:var(--panel2)}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px}
+.card{background:rgba(21,21,21,.92);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 12px 35px rgba(0,0,0,.2)}
+.label{color:var(--muted);font-size:13px}.value{font-size:30px;font-weight:800;margin-top:8px}
+.table-card{padding:0;overflow:hidden}.table-head{padding:18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:650px}th,td{text-align:left;padding:14px 18px;border-bottom:1px solid var(--line);font-size:14px}th{color:#aaa;font-weight:600;background:#111}td{color:#eee}.muted{color:var(--muted)}
+.note{margin-top:16px;color:#aaa;font-size:13px;line-height:1.6}.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:rgba(77,141,255,.12);color:#9ec0ff;font-size:12px}
+@media(max-width:800px){.grid{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}.wrap{padding:20px 14px 40px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><div class="brand">RAIZEN <span>ADMIN</span></div><div class="sub">Creator control panel • Raihan Kausar</div></div>
+    <div class="actions"><button class="btn" onclick="loadDashboard()">↻ Refresh</button><a class="btn" href="/">← Back to RAIZEN</a><a class="btn" href="/logout">🚪 Logout</a></div>
+  </div>
+
+  <div class="grid">
+    <div class="card"><div class="label">Total registered users</div><div id="totalUsers" class="value">—</div></div>
+    <div class="card"><div class="label">Active sessions</div><div id="activeSessions" class="value">—</div></div>
+    <div class="card"><div class="label">Database status</div><div id="dbStatus" class="value" style="font-size:20px">Checking…</div></div>
+  </div>
+
+  <div class="card table-card">
+    <div class="table-head"><strong>Registered accounts</strong><span id="updated" class="badge">Loading…</span></div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Username / Email</th><th>Created</th></tr></thead><tbody id="usersBody"><tr><td colspan="2" class="muted">Loading…</td></tr></tbody></table>
+    </div>
+  </div>
+
+  <div class="note">
+    Chat messages are currently stored in each user's browser localStorage, so this dashboard does not expose private chat content.
+    User and session statistics come from RAIZEN's PostgreSQL database.
+  </div>
+</div>
+<script>
+async function loadDashboard(){
+  try{
+    const res=await fetch('/admin/data');
+    const data=await res.json();
+    if(!data.ok){
+      document.body.innerHTML='<div style="padding:40px;font-family:Arial;color:white;background:#080808;min-height:100vh"><h2>Admin access denied</h2><p>'+((data.message||'Authentication required.'))+'</p><a style="color:#7aa7ff" href="/">Back to RAIZEN</a></div>';
+      return;
+    }
+    document.getElementById('totalUsers').textContent=data.total_users;
+    document.getElementById('activeSessions').textContent=data.active_sessions;
+    document.getElementById('dbStatus').textContent=data.database_status;
+    document.getElementById('updated').textContent='Updated '+new Date().toLocaleTimeString();
+    const body=document.getElementById('usersBody');
+    body.innerHTML='';
+    if(!data.users.length){body.innerHTML='<tr><td colspan="2" class="muted">No users yet.</td></tr>';return;}
+    data.users.forEach(user=>{
+      const tr=document.createElement('tr');
+      const td1=document.createElement('td'); td1.textContent=user.username;
+      const td2=document.createElement('td'); td2.textContent=new Date(user.created_at).toLocaleString();
+      tr.append(td1,td2); body.appendChild(tr);
+    });
+  }catch(e){
+    document.getElementById('dbStatus').textContent='Unavailable';
+    document.getElementById('usersBody').innerHTML='<tr><td colspan="2" class="muted">Could not load dashboard data.</td></tr>';
+  }
+}
+loadDashboard();
+</script>
+</body>
+</html>
+"""
+
+def get_admin_email():
+    return (os.getenv("ADMIN_EMAIL") or "").strip().lower()
+
+def is_admin_session(request: Request):
+    user = request.session.get("user") or {}
+    email = (user.get("email") or "").strip().lower()
+    admin_email = get_admin_email()
+    return bool(email and admin_email and email == admin_email)
+
+@app.get("/admin/check")
+async def admin_check(request: Request):
+    return {"is_admin": is_admin_session(request)}
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_page(request: Request):
+    if not is_admin_session(request):
+        return HTMLResponse(
+            content="<h2 style='font-family:Arial;padding:40px'>Admin access denied. <a href='/'>Back to RAIZEN</a></h2>",
+            status_code=403
+        )
+    return HTMLResponse(content=ADMIN_DASHBOARD_HTML)
+
+@app.get("/admin/data")
+async def admin_data(request: Request):
+    if not is_admin_session(request):
+        return {"ok": False, "message": "Admin access denied."}
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) AS count FROM raizen_users")
+                total_users = cur.fetchone()["count"]
+
+                cur.execute("DELETE FROM raizen_sessions WHERE expires_at < NOW()")
+                cur.execute("SELECT COUNT(*) AS count FROM raizen_sessions WHERE expires_at > NOW()")
+                active_sessions = cur.fetchone()["count"]
+
+                cur.execute(
+                    "SELECT username, created_at FROM raizen_users ORDER BY created_at DESC LIMIT 100"
+                )
+                rows = cur.fetchall()
+            conn.commit()
+
+        return {
+            "ok": True,
+            "total_users": int(total_users),
+            "active_sessions": int(active_sessions),
+            "database_status": "Connected",
+            "users": [
+                {"username": row["username"], "created_at": row["created_at"].isoformat()}
+                for row in rows
+            ]
+        }
+    except Exception as error:
+        print("ADMIN DATA ERROR:", error)
+        return {
+            "ok": False,
+            "message": "Could not load admin data."
+        }
 
 
 @app.get("/", response_class=HTMLResponse)
