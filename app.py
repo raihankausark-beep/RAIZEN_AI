@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 from fastapi import FastAPI, Request, UploadFile, File, Form
 from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
-from fastapi.responses import HTMLResponse, PlainTextResponse, JSONResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
 import psycopg
@@ -48,7 +48,8 @@ async def auth_callback(request: Request):
         "name": user.get("name"),
         "email": user.get("email"),
         "picture": user.get("picture"),
-}
+    }
+
     return RedirectResponse(url="/")
 
 
@@ -65,6 +66,8 @@ async def sitemap():
         content=xml,
         media_type="application/xml"
     )
+
+
 @app.get("/robots.txt")
 async def robots():
     return Response(
@@ -75,6 +78,8 @@ Sitemap: https://raizen-ai.onrender.com/sitemap.xml
 """,
         media_type="text/plain"
     )
+
+
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
@@ -109,12 +114,7 @@ async def auth_user(request: Request):
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    """SELECT u.username,
-                              COALESCE(c.is_active, TRUE) AS is_active
-                       FROM raizen_users u
-                       LEFT JOIN raizen_user_controls c
-                         ON c.username_key = u.username_key
-                       WHERE u.username_key = %s""",
+                    "SELECT username FROM raizen_users WHERE username_key = %s",
                     (username,)
                 )
                 existing = cur.fetchone()
@@ -136,19 +136,6 @@ async def auth_user(request: Request):
                             datetime.now(timezone.utc)
                         )
                     )
-                    cur.execute(
-                        """INSERT INTO raizen_user_controls
-                           (username_key, is_active, updated_at)
-                           VALUES (%s, TRUE, NOW())
-                           ON CONFLICT (username_key) DO NOTHING""",
-                        (username,)
-                    )
-                elif not existing["is_active"]:
-                    return {
-                        "ok": False,
-                        "user": None,
-                        "message": "This RAIZEN account has been deactivated by the administrator."
-                    }
 
             conn.commit()
 
@@ -178,6 +165,7 @@ oauth.register(
         "scope": "openid profile email",
     },
 )
+
 HF_TOKEN = os.getenv("HF_TOKEN")
 MODEL = "zai-org/GLM-5.3-Flash"
 
@@ -199,7 +187,6 @@ image_client = InferenceClient(api_key=HF_TOKEN)
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-ADMIN_EMAIL = (os.getenv("ADMIN_EMAIL") or "").strip().lower()
 AUTH_TOKEN_TTL = 60 * 60 * 24 * 7
 
 
@@ -236,13 +223,6 @@ def init_database():
                         token_hash TEXT PRIMARY KEY,
                         username_key TEXT NOT NULL REFERENCES raizen_users(username_key) ON DELETE CASCADE,
                         expires_at TIMESTAMPTZ NOT NULL
-                    )
-                """)
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS raizen_user_controls (
-                        username_key TEXT PRIMARY KEY REFERENCES raizen_users(username_key) ON DELETE CASCADE,
-                        is_active BOOLEAN NOT NULL DEFAULT TRUE,
-                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                     )
                 """)
                 cur.execute("DELETE FROM raizen_sessions WHERE expires_at < NOW()")
@@ -337,11 +317,8 @@ def get_authenticated_username(token):
                     FROM raizen_sessions s
                     JOIN raizen_users u
                       ON u.username_key = s.username_key
-                    LEFT JOIN raizen_user_controls c
-                      ON c.username_key = u.username_key
                     WHERE s.token_hash = %s
                       AND s.expires_at > NOW()
-                      AND COALESCE(c.is_active, TRUE) = TRUE
                     """,
                     (hash_token(token),)
                 )
@@ -1044,6 +1021,8 @@ button{color:inherit}
 .tool-strip::-webkit-scrollbar{display:none}
 .tool-chip{white-space:nowrap;border:1px solid #303030;background:#151515;border-radius:999px;padding:8px 12px;color:#d7d7d7;font-size:12px;cursor:pointer}
 .tool-chip:hover{background:#202020}
+.unified-tools{align-items:center}
+.tool-hint{font-size:11px;color:#777;white-space:nowrap}
 .input-area{display:flex;align-items:center;gap:8px;background:#202020;border:1px solid #2b2b2b;border-radius:28px;padding:6px 7px 6px 9px;box-shadow:0 8px 35px rgba(0,0,0,.45)}
 #messageInput{flex:1;min-width:0;border:0;outline:0;background:transparent;color:#fff;padding:11px 7px;font-size:16px}
 #messageInput::placeholder{color:#8c8c8c}
@@ -1104,12 +1083,12 @@ button{color:inherit}
       </div>
     </div>
 
-    <button id="adminMenuButton" style="display:none" onclick="window.location.href='/admin'">🛡️ Admin Dashboard</button>
     <button onclick="logout()">🚪 Logout</button>
   </div>
 </div>
 
 <span class="status">AI ONLINE</span>
+      <span class="status">AI ONLINE</span>
     </div>
   </header>
 
@@ -1125,12 +1104,12 @@ button{color:inherit}
       <div class="hero-title">How can I help?</div>
       <div class="hero-subtitle">Chat with RAIZEN, create images, work with files, search the web, and more.</div>
       <div class="prompt-grid">
-        <button class="prompt-card" onclick="usePrompt('Help me write or edit something')"><strong>✎ Write or edit</strong>Draft, rewrite, improve</button>
-        <button class="prompt-card" onclick="generateImageFromInput()"><strong>▧ Create an image</strong>Generate from your prompt</button>
-        <button class="prompt-card" onclick="usePrompt('Search the latest AI news')"><strong>◎ Search the web</strong>Find current information</button>
-        <button class="prompt-card" onclick="document.getElementById('fileInput').click()"><strong>▤ Add a file</strong>PDF, DOCX or TXT</button>
-        <button class="prompt-card" onclick="document.getElementById('visionInput').click()"><strong>◉ Analyze an image</strong>Ask about a picture</button>
-        <button class="prompt-card" onclick="usePrompt('What is the weather in Cuttack today?')"><strong>☼ Weather</strong>Check current conditions</button>
+        <button class="prompt-card" onclick="usePrompt('Help me write or edit something')"><strong>✎ Write or edit</strong>Ask naturally</button>
+        <button class="prompt-card" onclick="usePrompt('Create a poster for Applied Mathematics')"><strong>▧ Create anything</strong>RAIZEN decides what to do</button>
+        <button class="prompt-card" onclick="usePrompt('Search the latest AI news')"><strong>◎ Search the web</strong>Ask for current information</button>
+        <button class="prompt-card" onclick="document.getElementById('fileInput').click()"><strong>＋ Attach</strong>Add a PDF, DOCX, TXT, or image</button>
+        <button class="prompt-card" onclick="usePrompt('What is the weather in Cuttack today?')"><strong>☼ Weather</strong>Ask about live conditions</button>
+        <button class="prompt-card" onclick="usePrompt('Explain this topic simply')"><strong>⚡ Ask anything</strong>No special mode needed</button>
       </div>
     </section>
     <div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>
@@ -1138,21 +1117,18 @@ button{color:inherit}
 
   <div class="composer-wrap">
     <div class="composer">
-      <div class="tool-strip">
-        <button class="tool-chip" onclick="document.getElementById('fileInput').click()">＋ File</button>
-        <button class="tool-chip" onclick="document.getElementById('visionInput').click()">▧ Image</button>
-        <button class="tool-chip" onclick="generateImageFromInput()">✦ Create image</button>
-        <button class="tool-chip" onclick="usePrompt('Search the web for ')" >◎ Web search</button>
+      <div class="tool-strip unified-tools">
+        <button class="tool-chip" onclick="document.getElementById('fileInput').click()">＋ Attach file or image</button>
+        <span class="tool-hint">Just type what you want — RAIZEN chooses chat, image generation, web, weather, vision, or file help automatically.</span>
       </div>
 
       <div class="file-panel">
-        <input id="fileInput" class="file-input" type="file" accept=".pdf,.docx,.txt">
-        <span id="fileName" class="file-name">No document selected</span>
+        <input id="fileInput" class="file-input" type="file" accept=".pdf,.docx,.txt,image/png,image/jpeg,image/webp">
+        <span id="fileName" class="file-name">No attachment selected</span>
         <button class="control" onclick="clearDocument()">Remove</button>
       </div>
 
       <div class="vision-panel">
-        <input id="visionInput" class="vision-input" type="file" accept="image/png,image/jpeg,image/webp">
         <span id="visionName" class="vision-name">No image selected</span>
         <button class="control" onclick="clearVision()">Remove</button>
       </div>
@@ -1163,12 +1139,11 @@ button{color:inherit}
       </div>
 
       <div class="input-area">
-        <button class="circle-btn" aria-label="Add" onclick="document.getElementById('fileInput').click()">＋</button>
-        <input id="messageInput" placeholder="Message RAIZEN..." autocomplete="off">
-        <button class="circle-btn" aria-label="Image" onclick="document.getElementById('visionInput').click()">▧</button>
+        <button class="circle-btn" aria-label="Attach" title="Attach a file or image" onclick="document.getElementById('fileInput').click()">＋</button>
+        <input id="messageInput" placeholder="Message RAIZEN... ask for anything" autocomplete="off">
         <button type="button" id="sendButton" aria-label="Send" onclick="window.sendMessage()">↑</button>
       </div>
-      <div class="composer-note">RAIZEN • Created and developed by Raihan Kausar</div>
+      <div class="composer-note">RAIZEN • One prompt. Just ask. RAIZEN decides what to do.</div>
     </div>
   </div>
 </div>
@@ -1211,12 +1186,6 @@ async function checkLogin(){
             if (accountName) accountName.textContent = data.user.name || loggedInUsername;
             if (menuName) menuName.textContent = data.user.name || "User";
             if (menuEmail) menuEmail.textContent = data.user.email || loggedInUsername;
-
-            const adminButton = document.getElementById("adminMenuButton");
-            if (adminButton && data.user.email) {
-                // The backend remains the real security check; this only controls visibility.
-                adminButton.style.display = "block";
-            }
 
             showAppAfterLogin();
         } else {
@@ -1276,19 +1245,59 @@ document.getElementById("fileInput").addEventListener("change", async function()
     if (!file) return;
 
     const lower = file.name.toLowerCase();
+    const isImage = ["image/png", "image/jpeg", "image/webp"].includes(file.type)
+        || [".png", ".jpg", ".jpeg", ".webp"].some(ext => lower.endsWith(ext));
+
+    if (isImage) {
+        if (file.size > 12 * 1024 * 1024) {
+            displayMessage("assistant", "⚠️ Image is too large. Maximum size is 12 MB.");
+            this.value = "";
+            return;
+        }
+
+        documentText = "";
+        documentName = "";
+        visionFile = file;
+
+        const fileName = document.getElementById("fileName");
+        const visionName = document.getElementById("visionName");
+
+        if (fileName) fileName.textContent = "🖼️ " + file.name + " ready";
+        if (visionName) visionName.textContent = "🖼️ Image attached";
+
+        displayMessage(
+            "assistant",
+            "🖼️ " + file.name +
+            " is ready. Ask RAIZEN what you want to know about the image."
+        );
+
+        return;
+    }
+
     if (![".pdf", ".docx", ".txt"].some(ext => lower.endsWith(ext))) {
-        displayMessage("assistant", "⚠️ Please upload a PDF, DOCX, or TXT file.");
+        displayMessage(
+            "assistant",
+            "⚠️ Please attach a PDF, DOCX, TXT, PNG, JPG/JPEG, or WEBP file."
+        );
         this.value = "";
         return;
     }
 
+    visionFile = null;
+    document.getElementById("visionName").textContent = "No image selected";
+
     const formData = new FormData();
     formData.append("file", file);
     formData.append("token", authToken);
-    document.getElementById("fileName").textContent = "Reading " + file.name + "...";
+    document.getElementById("fileName").textContent =
+        "Reading " + file.name + "...";
 
     try {
-        const response = await fetch("/upload", { method: "POST", body: formData });
+        const response = await fetch("/upload", {
+            method: "POST",
+            body: formData
+        });
+
         const data = await response.json();
 
         if (!response.ok || data.error) {
@@ -1297,11 +1306,14 @@ document.getElementById("fileInput").addEventListener("change", async function()
 
         documentText = data.text || "";
         documentName = data.filename || file.name;
-        document.getElementById("fileName").textContent = "📄 " + documentName + " ready";
 
-        displayMessage("assistant",
+        document.getElementById("fileName").textContent =
+            "📄 " + documentName + " ready";
+
+        displayMessage(
+            "assistant",
             "📄 " + documentName +
-            " is ready. Ask me to summarize it, explain it, find important points, or create questions from it."
+            " is ready. Just ask me what you want to do with it."
         );
     } catch (error) {
         documentText = "";
@@ -1314,48 +1326,23 @@ document.getElementById("fileInput").addEventListener("change", async function()
 function clearDocument() {
     documentText = "";
     documentName = "";
-    document.getElementById("fileInput").value = "";
-    document.getElementById("fileName").textContent = "No document selected";
+    const input = document.getElementById("fileInput");
+    if (input) input.value = "";
+    document.getElementById("fileName").textContent = "No attachment selected";
+    if (visionFile) {
+        visionFile = null;
+        document.getElementById("visionName").textContent = "No image selected";
+    }
 }
-
-document.getElementById("visionInput").addEventListener("change", function() {
-    const file = this.files[0];
-    if (!file) return;
-
-    const allowed = ["image/png", "image/jpeg", "image/webp"];
-    if (!allowed.includes(file.type)) {
-        displayMessage(
-            "assistant",
-            "⚠️ Please select a PNG, JPG/JPEG, or WEBP image."
-        );
-        this.value = "";
-        return;
-    }
-
-    if (file.size > 12 * 1024 * 1024) {
-        displayMessage(
-            "assistant",
-            "⚠️ Image is too large. Maximum size is 12 MB."
-        );
-        this.value = "";
-        return;
-    }
-
-    visionFile = file;
-    document.getElementById("visionName").textContent =
-        "🖼️ " + file.name + " ready";
-
-    displayMessage(
-        "assistant",
-        "🖼️ " + file.name +
-        " is ready. Ask me to describe it, read text from it, or explain what is shown."
-    );
-});
 
 function clearVision() {
     visionFile = null;
-    document.getElementById("visionInput").value = "";
+    const input = document.getElementById("fileInput");
+    if (input) input.value = "";
     document.getElementById("visionName").textContent = "No image selected";
+    if (!documentText) {
+        document.getElementById("fileName").textContent = "No attachment selected";
+    }
 }
 
 async function sendVisionMessage(question) {
@@ -1538,19 +1525,50 @@ function usePrompt(text) {
 function looksLikeImageRequest(text) {
     const value = (text || "").toLowerCase().trim();
 
-    const imagePatterns = [
-        /\b(create|generate|make|draw|design|render)\b.*\b(image|picture|photo|poster|logo|wallpaper|illustration|artwork|thumbnail|banner|portrait|icon)\b/,
-        /\b(image|picture|photo|poster|logo|wallpaper|illustration|artwork|thumbnail|banner|portrait|icon)\b.*\b(create|generate|make|draw|design|render)\b/
+    const visualWords = [
+        "image", "picture", "photo", "poster", "logo", "wallpaper",
+        "illustration", "artwork", "banner", "thumbnail", "portrait",
+        "icon", "cover", "flyer", "diagram", "infographic", "drawing",
+        "scene", "character", "mascot", "sticker", "comic"
     ];
 
-    return imagePatterns.some(pattern => pattern.test(value));
+    const imageVerbs = [
+        "create", "generate", "make", "draw", "design",
+        "render", "illustrate", "paint"
+    ];
+
+    const hasVisualWord = visualWords.some(word =>
+        new RegExp("\\b" + word + "\\b", "i").test(value)
+    );
+
+    const hasImageVerb = imageVerbs.some(word =>
+        new RegExp("\\b" + word + "\\b", "i").test(value)
+    );
+
+    const directImagePhrases = [
+        "turn this into a poster",
+        "turn this into an image",
+        "make this a poster",
+        "make this into an image",
+        "visualize this",
+        "visualise this",
+        "generate an image",
+        "create an image",
+        "make an image",
+        "generate a picture",
+        "create a picture"
+    ];
+
+    return directImagePhrases.some(phrase => value.includes(phrase))
+        || (hasImageVerb && hasVisualWord);
 }
 
 async function generateImageFromPrompt(prompt) {
     const button = document.getElementById("sendButton");
-    const cleanPrompt = (prompt || "").trim();
 
-    if (!cleanPrompt) return;
+    if (!prompt || button.disabled) return;
+
+    button.disabled = true;
 
     const thinking = displayMessage(
         "assistant",
@@ -1564,7 +1582,7 @@ async function generateImageFromPrompt(prompt) {
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify({
                 token: authToken,
-                prompt: cleanPrompt
+                prompt: prompt
             })
         });
 
@@ -1573,51 +1591,41 @@ async function generateImageFromPrompt(prompt) {
         if (thinking) thinking.remove();
 
         if (data.error) {
-            displayMessage("assistant", "⚠️ " + data.error);
-            chatHistory.push({role: "assistant", content: "⚠️ " + data.error});
-        } else if (data.image) {
-            displayGeneratedImage(cleanPrompt, data.image);
-            chatHistory.push({
-                role: "assistant",
-                content: "[Generated image: " + cleanPrompt + "]"
-            });
+            displayMessage("assistant", data.error);
+            chatHistory.push({role: "user", content: prompt});
+            chatHistory.push({role: "assistant", content: data.error});
         } else {
-            displayMessage("assistant", "⚠️ No image was returned by the image service.");
+            displayGeneratedImage(prompt, data.image);
+            chatHistory.push({role: "user", content: prompt});
             chatHistory.push({
                 role: "assistant",
-                content: "⚠️ No image was returned by the image service."
+                content: "🎨 Generated an image for: " + prompt
             });
         }
 
         saveCurrentChat();
-
     } catch (error) {
         if (thinking) thinking.remove();
-        const message = "⚠️ Image generation failed: " + error.message;
-        displayMessage("assistant", message);
-        chatHistory.push({role: "assistant", content: message});
+
+        const msg = "⚠️ Image generation failed. Please try again.";
+        displayMessage("assistant", msg);
+        chatHistory.push({role: "user", content: prompt});
+        chatHistory.push({role: "assistant", content: msg});
         saveCurrentChat();
-    } finally {
-        if (button) button.disabled = false;
-        const input = document.getElementById("messageInput");
-        if (input) input.focus();
     }
+
+    button.disabled = false;
+    document.getElementById("messageInput").focus();
 }
 
 async function generateImageFromInput() {
     const input = document.getElementById("messageInput");
-    const button = document.getElementById("sendButton");
     const prompt = input.value.trim();
 
-    if (!prompt || button.disabled) return;
+    if (!prompt) return;
 
     input.value = "";
-    button.disabled = true;
-
     displayMessage("user", prompt);
-    chatHistory.push({role: "user", content: prompt});
-    saveCurrentChat();
-
     await generateImageFromPrompt(prompt);
 }
 
@@ -1670,6 +1678,14 @@ window.sendMessage = async function sendMessage() {
 
     displayMessage("user", message);
 
+    // One prompt box: RAIZEN decides whether this is chat or image generation.
+    if (looksLikeImageRequest(message)) {
+        await generateImageFromPrompt(message);
+        button.disabled = false;
+        input.focus();
+        return;
+    }
+
     chatHistory.push({
         role: "user",
         content: message
@@ -1684,15 +1700,6 @@ window.sendMessage = async function sendMessage() {
     );
 
     try {
-        // Automatically route natural-language image requests to the image generator.
-        // Examples: "create a poster of applied mathematics",
-        // "generate an image of a cat", "make a logo for my project".
-        if (looksLikeImageRequest(message)) {
-            if (thinking) thinking.remove();
-            await generateImageFromPrompt(message);
-            return;
-        }
-
         if (visionFile) {
             const reply = await sendVisionMessage(message);
 
@@ -1872,21 +1879,13 @@ async def login(request: AuthRequest):
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    """SELECT u.username, u.salt, u.password_hash,
-                              COALESCE(c.is_active, TRUE) AS is_active
-                       FROM raizen_users u
-                       LEFT JOIN raizen_user_controls c
-                         ON c.username_key = u.username_key
-                       WHERE u.username_key = %s""",
+                    "SELECT username, salt, password_hash FROM raizen_users WHERE username_key = %s",
                     (username.lower(),)
                 )
                 user = cur.fetchone()
 
         if not user or not verify_password(request.password, user["salt"], user["password_hash"]):
             return {"ok": False, "message": "Invalid username or password."}
-
-        if not user["is_active"]:
-            return {"ok": False, "message": "This account has been deactivated by the administrator."}
 
         token = create_auth_token(user["username"])
         return {"ok": True, "message": "Login successful.", "username": user["username"], "token": token}
@@ -1906,282 +1905,6 @@ async def logout(token: str = ""):
         except Exception as error:
             print("LOGOUT ERROR:", error)
     return {"ok": True}
-
-
-
-def is_admin_request(request: Request):
-    user = request.session.get("user") or {}
-    email = (user.get("email") or "").strip().lower()
-    return bool(ADMIN_EMAIL and email and email == ADMIN_EMAIL)
-
-
-def admin_denied():
-    return JSONResponse(
-        {"ok": False, "message": "Admin access denied."},
-        status_code=403
-    )
-
-
-@app.get("/admin", response_class=HTMLResponse)
-async def admin_page(request: Request):
-    user = request.session.get("user") or {}
-    email = (user.get("email") or "").strip().lower()
-
-    if not email:
-        return RedirectResponse(url="/login")
-
-    if not ADMIN_EMAIL:
-        return HTMLResponse(
-            content="""
-            <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1.0">
-            <title>RAIZEN Admin Setup</title>
-            <style>body{margin:0;background:#050505;color:#fff;font-family:Arial,sans-serif;display:grid;place-items:center;min-height:100vh;padding:24px}div{max-width:650px;background:#111;border:1px solid #292929;border-radius:18px;padding:28px}code{background:#222;padding:4px 7px;border-radius:6px;color:#7fb0ff}p{color:#aaa;line-height:1.6}</style>
-            </head><body><div><h2>⚡ RAIZEN Admin Setup</h2>
-            <p>The admin dashboard is installed, but the <code>ADMIN_EMAIL</code> Render environment variable is not configured.</p>
-            <p>Add <code>ADMIN_EMAIL</code> in Render using the same Google email used for your RAIZEN admin account, then redeploy.</p>
-            <p><a href="/" style="color:#79adff">← Back to RAIZEN</a></p></div></body></html>
-            """,
-            status_code=503,
-            media_type="text/html"
-        )
-
-    if email != ADMIN_EMAIL:
-        return HTMLResponse(
-            content="""
-            <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1.0">
-            <title>RAIZEN Admin</title><style>body{margin:0;background:#050505;color:#fff;font-family:Arial,sans-serif;display:grid;place-items:center;min-height:100vh;padding:24px}div{max-width:520px;text-align:center;background:#111;border:1px solid #292929;border-radius:18px;padding:28px}p{color:#aaa}</style></head>
-            <body><div><h2>🔒 Admin access denied</h2><p>This Google account is not configured as the RAIZEN administrator.</p><p><a href="/" style="color:#79adff">← Back to RAIZEN</a></p></div></body></html>
-            """,
-            status_code=403,
-            media_type="text/html"
-        )
-
-    html = r"""
-<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RAIZEN Admin</title>
-<style>
-:root{--bg:#050505;--panel:#111;--line:#292929;--text:#f5f5f5;--muted:#9a9a9a;--blue:#4d8dff;--red:#ff5c67;--green:#35d07f}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
-.wrap{max-width:1150px;margin:auto;padding:28px 18px 50px}
-.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:24px}
-.brand{font-size:25px;font-weight:800}.brand span{color:var(--blue)}
-.actions{display:flex;gap:8px}
-button{border:1px solid var(--line);background:#171717;color:#fff;border-radius:10px;padding:10px 14px;cursor:pointer}
-button:hover{background:#222}
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px}
-.label{color:var(--muted);font-size:12px}.value{font-size:28px;font-weight:800;margin-top:8px}
-.table-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden}
-.table-head{padding:18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
-table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:13px 14px;border-bottom:1px solid #202020;font-size:13px}th{color:#aaa;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
-.badge{display:inline-block;padding:5px 8px;border-radius:999px;font-size:11px}
-.active{background:rgba(53,208,127,.12);color:var(--green)}
-.inactive{background:rgba(255,92,103,.12);color:var(--red)}
-.manage{padding:7px 10px;font-size:12px}.deactivate{border-color:#553036;color:#ff8a92}.activate{border-color:#294b3a;color:#6ee7a4}
-.empty{text-align:center;color:#777;padding:35px}
-#status{color:#999;font-size:12px}
-@media(max-width:700px){.grid{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}table{min-width:760px}.table-card{overflow-x:auto}}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <div class="top">
-    <div class="brand">⚡ <span>RAIZEN</span> Admin Dashboard</div>
-    <div class="actions">
-      <button onclick="loadUsers()">↻ Refresh</button>
-      <button onclick="location.href='/'">← RAIZEN</button>
-    </div>
-  </div>
-
-  <div class="grid">
-    <div class="card"><div class="label">Total users</div><div id="totalUsers" class="value">—</div></div>
-    <div class="card"><div class="label">Active users</div><div id="activeUsers" class="value">—</div></div>
-    <div class="card"><div class="label">Active sessions</div><div id="sessions" class="value">—</div></div>
-  </div>
-
-  <div class="table-card">
-    <div class="table-head">
-      <strong>User management</strong>
-      <span id="status">Loading...</span>
-    </div>
-    <div style="overflow-x:auto">
-      <table>
-        <thead><tr><th>Account</th><th>Created</th><th>Status</th><th>Action</th></tr></thead>
-        <tbody id="usersBody"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<script>
-async function loadUsers(){
-  const status=document.getElementById("status");
-  status.textContent="Loading...";
-  try{
-    const r=await fetch("/admin/api/users");
-    const data=await r.json();
-    if(!r.ok || !data.ok) throw new Error(data.message || "Could not load users.");
-
-    document.getElementById("totalUsers").textContent=data.total_users;
-    document.getElementById("activeUsers").textContent=data.active_users;
-    document.getElementById("sessions").textContent=data.active_sessions;
-
-    const body=document.getElementById("usersBody");
-    body.innerHTML="";
-    if(!data.users.length){
-      body.innerHTML='<tr><td colspan="4" class="empty">No users yet.</td></tr>';
-    }else{
-      data.users.forEach(u=>{
-        const tr=document.createElement("tr");
-        const created=new Date(u.created_at).toLocaleString();
-        const statusClass=u.is_active?"active":"inactive";
-        const statusText=u.is_active?"Active":"Deactivated";
-        const action=u.is_active
-          ? `<button class="manage deactivate" onclick="setUser('${encodeURIComponent(u.username_key)}',false)">Deactivate</button>`
-          : `<button class="manage activate" onclick="setUser('${encodeURIComponent(u.username_key)}',true)">Activate</button>`;
-        tr.innerHTML=
-          `<td>${escapeHtml(u.username)}</td>`+
-          `<td>${escapeHtml(created)}</td>`+
-          `<td><span class="badge ${statusClass}">${statusText}</span></td>`+
-          `<td>${action}</td>`;
-        body.appendChild(tr);
-      });
-    }
-    status.textContent="Updated just now";
-  }catch(e){
-    status.textContent=e.message;
-  }
-}
-
-async function setUser(key,active){
-  const action=active?"activate":"deactivate";
-  if(!confirm(`Are you sure you want to ${action} this account?`)) return;
-  try{
-    const r=await fetch("/admin/api/user-status",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({username_key:decodeURIComponent(key),is_active:active})
-    });
-    const data=await r.json();
-    if(!r.ok || !data.ok) throw new Error(data.message || "Action failed.");
-    await loadUsers();
-  }catch(e){ alert(e.message); }
-}
-
-function escapeHtml(value){
-  return String(value)
-    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;").replace(/"/g,"&quot;")
-    .replace(/'/g,"&#039;");
-}
-loadUsers();
-</script>
-</body>
-</html>
-"""
-    return HTMLResponse(content=html)
-
-
-@app.get("/admin/api/users")
-async def admin_users(request: Request):
-    if not is_admin_request(request):
-        return admin_denied()
-
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT
-                        u.username_key,
-                        u.username,
-                        u.created_at,
-                        COALESCE(c.is_active, TRUE) AS is_active
-                    FROM raizen_users u
-                    LEFT JOIN raizen_user_controls c
-                      ON c.username_key = u.username_key
-                    ORDER BY u.created_at DESC
-                """)
-                users = cur.fetchall()
-
-                cur.execute("""
-                    SELECT COUNT(*) AS count
-                    FROM raizen_sessions s
-                    LEFT JOIN raizen_user_controls c
-                      ON c.username_key = s.username_key
-                    WHERE s.expires_at > NOW()
-                      AND COALESCE(c.is_active, TRUE) = TRUE
-                """)
-                active_sessions = cur.fetchone()["count"]
-
-        active_users = sum(1 for u in users if u["is_active"])
-        return {
-            "ok": True,
-            "total_users": len(users),
-            "active_users": active_users,
-            "active_sessions": active_sessions,
-            "users": [
-                {
-                    "username_key": u["username_key"],
-                    "username": u["username"],
-                    "created_at": u["created_at"].isoformat(),
-                    "is_active": bool(u["is_active"])
-                }
-                for u in users
-            ]
-        }
-    except Exception as error:
-        print("ADMIN USERS ERROR:", error)
-        return {"ok": False, "message": "Could not load user management data."}
-
-
-class AdminUserStatusRequest(BaseModel):
-    username_key: str
-    is_active: bool
-
-
-@app.post("/admin/api/user-status")
-async def admin_user_status(request: Request, body: AdminUserStatusRequest):
-    if not is_admin_request(request):
-        return admin_denied()
-
-    username_key = body.username_key.strip().lower()
-    if not username_key:
-        return {"ok": False, "message": "Invalid account."}
-
-    if ADMIN_EMAIL and username_key == ADMIN_EMAIL:
-        return {"ok": False, "message": "The admin account cannot be deactivated."}
-
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """INSERT INTO raizen_user_controls
-                       (username_key, is_active, updated_at)
-                       VALUES (%s, %s, NOW())
-                       ON CONFLICT (username_key)
-                       DO UPDATE SET is_active = EXCLUDED.is_active,
-                                     updated_at = NOW()""",
-                    (username_key, body.is_active)
-                )
-
-                if not body.is_active:
-                    cur.execute(
-                        "DELETE FROM raizen_sessions WHERE username_key = %s",
-                        (username_key,)
-                    )
-            conn.commit()
-
-        return {
-            "ok": True,
-            "message": "Account activated." if body.is_active else "Account deactivated."
-        }
-    except Exception as error:
-        print("ADMIN USER STATUS ERROR:", error)
-        return {"ok": False, "message": "Could not update account status."}
 
 
 @app.get("/creator-dashboard")
@@ -2524,9 +2247,9 @@ async def generate_image(request: ImageRequest):
         }
 
     except Exception as error:
-        print("IMAGE GENERATION ERROR:", repr(error))
+        print("IMAGE GENERATION ERROR:", error)
         return {
-            "error": f"Image generation failed: {type(error).__name__}: {str(error)[:500]}"
+            "error": "Image generation is temporarily unavailable. Please try again."
         }
 
 
@@ -2553,6 +2276,5 @@ async def health():
         "vision": True,
         "live_search": True,
         "image_generation": True,
-        "image_model": IMAGE_MODEL,
-        "image_provider": "fal-ai"
+        "image_model": IMAGE_MODEL
     }
