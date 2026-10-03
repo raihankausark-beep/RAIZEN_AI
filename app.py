@@ -47,8 +47,9 @@ async def auth_callback(request: Request):
         "name": user.get("name"),
         "email": user.get("email"),
         "picture": user.get("picture"),
-    }
-    @app.get("/logout")
+}
+    return RedirectResponse(url="/")
+@app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
 
@@ -61,7 +62,7 @@ async def logout(request: Request):
         f"&returnTo=https://raizen-ai.onrender.com/login"
     )
 
-    return RedirectResponse(url="/")
+    
 @app.get("/auth/user")
 async def auth_user(request: Request):
     user = request.session.get("user")
