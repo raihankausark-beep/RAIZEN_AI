@@ -195,7 +195,7 @@ vision_client = InferenceClient(api_key=HF_TOKEN)
 
 IMAGE_MODEL = "black-forest-labs/FLUX.1-schnell"
 
-image_client = InferenceClient(api_key=HF_TOKEN)
+image_client = InferenceClient(provider="fal-ai", api_key=HF_TOKEN)
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -1104,6 +1104,7 @@ button{color:inherit}
       </div>
     </div>
 
+    <button id="adminMenuButton" style="display:none" onclick="window.location.href='/admin'">🛡️ Admin Dashboard</button>
     <button onclick="logout()">🚪 Logout</button>
   </div>
 </div>
@@ -1210,6 +1211,12 @@ async function checkLogin(){
             if (accountName) accountName.textContent = data.user.name || loggedInUsername;
             if (menuName) menuName.textContent = data.user.name || "User";
             if (menuEmail) menuEmail.textContent = data.user.email || loggedInUsername;
+
+            const adminButton = document.getElementById("adminMenuButton");
+            if (adminButton && data.user.email) {
+                // The backend remains the real security check; this only controls visibility.
+                adminButton.style.display = "block";
+            }
 
             showAppAfterLogin();
         } else {
@@ -1878,8 +1885,37 @@ def admin_denied():
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request):
-    if not is_admin_request(request):
-        return RedirectResponse(url="/")
+    user = request.session.get("user") or {}
+    email = (user.get("email") or "").strip().lower()
+
+    if not email:
+        return RedirectResponse(url="/login")
+
+    if not ADMIN_EMAIL:
+        return HTMLResponse(
+            content="""
+            <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1.0">
+            <title>RAIZEN Admin Setup</title>
+            <style>body{margin:0;background:#050505;color:#fff;font-family:Arial,sans-serif;display:grid;place-items:center;min-height:100vh;padding:24px}div{max-width:650px;background:#111;border:1px solid #292929;border-radius:18px;padding:28px}code{background:#222;padding:4px 7px;border-radius:6px;color:#7fb0ff}p{color:#aaa;line-height:1.6}</style>
+            </head><body><div><h2>⚡ RAIZEN Admin Setup</h2>
+            <p>The admin dashboard is installed, but the <code>ADMIN_EMAIL</code> Render environment variable is not configured.</p>
+            <p>Add <code>ADMIN_EMAIL</code> in Render using the same Google email used for your RAIZEN admin account, then redeploy.</p>
+            <p><a href="/" style="color:#79adff">← Back to RAIZEN</a></p></div></body></html>
+            """,
+            status_code=503,
+            media_type="text/html"
+        )
+
+    if email != ADMIN_EMAIL:
+        return HTMLResponse(
+            content="""
+            <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1.0">
+            <title>RAIZEN Admin</title><style>body{margin:0;background:#050505;color:#fff;font-family:Arial,sans-serif;display:grid;place-items:center;min-height:100vh;padding:24px}div{max-width:520px;text-align:center;background:#111;border:1px solid #292929;border-radius:18px;padding:28px}p{color:#aaa}</style></head>
+            <body><div><h2>🔒 Admin access denied</h2><p>This Google account is not configured as the RAIZEN administrator.</p><p><a href="/" style="color:#79adff">← Back to RAIZEN</a></p></div></body></html>
+            """,
+            status_code=403,
+            media_type="text/html"
+        )
 
     html = r"""
 <!DOCTYPE html>
@@ -2433,6 +2469,7 @@ async def generate_image(request: ImageRequest):
         image = image_client.text_to_image(
             prompt,
             model=IMAGE_MODEL,
+            provider="fal-ai",
             negative_prompt=request.negative_prompt.strip() or None,
             width=768,
             height=768,
@@ -2478,5 +2515,6 @@ async def health():
         "vision": True,
         "live_search": True,
         "image_generation": True,
-        "image_model": IMAGE_MODEL
+        "image_model": IMAGE_MODEL,
+        "image_provider": "fal-ai"
     }
