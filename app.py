@@ -1525,6 +1525,8 @@ function usePrompt(text) {
 function looksLikeImageRequest(text) {
     const value = (text || "").toLowerCase().trim();
 
+    // A single prompt box: image nouns alone can be enough.
+    // Examples: "a school image", "image of a dog", "applied mathematics poster".
     const visualWords = [
         "image", "picture", "photo", "poster", "logo", "wallpaper",
         "illustration", "artwork", "banner", "thumbnail", "portrait",
@@ -1534,7 +1536,7 @@ function looksLikeImageRequest(text) {
 
     const imageVerbs = [
         "create", "generate", "make", "draw", "design",
-        "render", "illustrate", "paint"
+        "render", "illustrate", "paint", "show"
     ];
 
     const hasVisualWord = visualWords.some(word =>
@@ -1544,6 +1546,17 @@ function looksLikeImageRequest(text) {
     const hasImageVerb = imageVerbs.some(word =>
         new RegExp("\\b" + word + "\\b", "i").test(value)
     );
+
+    const imageObjectPatterns = [
+        /\bimage\s+of\b/i,
+        /\bpicture\s+of\b/i,
+        /\bphoto\s+of\b/i,
+        /\bposter\s+of\b/i,
+        /\blogo\s+for\b/i,
+        /\bwallpaper\s+of\b/i,
+        /\bportrait\s+of\b/i,
+        /\bdiagram\s+of\b/i
+    ];
 
     const directImagePhrases = [
         "turn this into a poster",
@@ -1559,9 +1572,17 @@ function looksLikeImageRequest(text) {
         "create a picture"
     ];
 
+    // "generate" alone should remain normal chat so RAIZEN can ask what to generate.
+    if (!value || value === "generate" || value === "create" || value === "make") {
+        return false;
+    }
+
     return directImagePhrases.some(phrase => value.includes(phrase))
-        || (hasImageVerb && hasVisualWord);
+        || imageObjectPatterns.some(pattern => pattern.test(value))
+        || (hasVisualWord && hasImageVerb)
+        || (hasVisualWord && value.split(/\s+/).length <= 8);
 }
+
 
 async function generateImageFromPrompt(prompt) {
     const button = document.getElementById("sendButton");
@@ -1599,7 +1620,7 @@ async function generateImageFromPrompt(prompt) {
             chatHistory.push({role: "user", content: prompt});
             chatHistory.push({
                 role: "assistant",
-                content: "🎨 Generated an image for: " + prompt
+                content: "[Generated image]"
             });
         }
 
@@ -1634,21 +1655,25 @@ function displayGeneratedImage(prompt, dataUrl) {
 
     const div = document.createElement("div");
     div.className = "message assistant image-result";
+    div.style.padding = "0";
+    div.style.background = "transparent";
+    div.style.border = "0";
+
+    const card = document.createElement("div");
+    card.style.maxWidth = "768px";
+    card.style.width = "100%";
 
     const img = document.createElement("img");
     img.src = dataUrl;
     img.alt = prompt;
     img.loading = "eager";
-    img.style.width = "min(768px, 100%)";
-    img.style.maxWidth = "100%";
+    img.style.width = "100%";
+    img.style.maxWidth = "768px";
     img.style.height = "auto";
     img.style.borderRadius = "18px";
     img.style.display = "block";
-    img.style.margin = "0";
     img.style.objectFit = "contain";
-    img.onerror = function() {
-        div.innerHTML = "<div>⚠️ The generated image could not be displayed.</div>";
-    };
+    img.style.background = "#111";
 
     const actions = document.createElement("div");
     actions.style.display = "flex";
@@ -1661,10 +1686,15 @@ function displayGeneratedImage(prompt, dataUrl) {
     download.download = "raizen-generated-image.png";
     download.textContent = "⬇️ Save image";
     download.style.display = "inline-block";
+    download.style.padding = "8px 12px";
+    download.style.borderRadius = "999px";
+    download.style.background = "#252525";
+    download.style.color = "#fff";
+    download.style.textDecoration = "none";
 
     const promptLabel = document.createElement("span");
     promptLabel.textContent = prompt;
-    promptLabel.style.color = "#999";
+    promptLabel.style.color = "#8f8f8f";
     promptLabel.style.fontSize = "12px";
     promptLabel.style.overflow = "hidden";
     promptLabel.style.textOverflow = "ellipsis";
@@ -1672,14 +1702,20 @@ function displayGeneratedImage(prompt, dataUrl) {
 
     actions.appendChild(download);
     actions.appendChild(promptLabel);
-    div.appendChild(img);
-    div.appendChild(actions);
+    card.appendChild(img);
+    card.appendChild(actions);
+    div.appendChild(card);
+
+    img.onerror = function() {
+        div.innerHTML = "<div class='message assistant'>⚠️ The generated image could not be displayed.</div>";
+    };
 
     chat.appendChild(div);
     chat.scrollTop = chat.scrollHeight;
 
     return div;
 }
+
 
 window.sendMessage = async function sendMessage() {
     const input = document.getElementById("messageInput");
