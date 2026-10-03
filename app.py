@@ -58,13 +58,13 @@ async def logout(request: Request):
     client_id = os.getenv("AUTH0_CLIENT_ID")
 
     params = urlencode({
-    "client_id": client_id,
-    "returnTo": "https://raizen-ai.onrender.com/login"
-})
+        "client_id": client_id,
+        "returnTo": "https://raizen-ai.onrender.com/login"
+    })
 
-return RedirectResponse(
-    f"https://{domain}/v2/logout?{params}"
-)
+    return RedirectResponse(
+        f"https://{domain}/v2/logout?{params}"
+    )
 
     
 @app.get("/auth/user")
@@ -1062,7 +1062,6 @@ async function checkLogin(){
 }
 
 function showLoginScreen(){
-function checkLogin(){
     window.location.href = "/login";
 }
 function showAppAfterLogin(){ 
