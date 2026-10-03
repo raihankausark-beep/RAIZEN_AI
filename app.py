@@ -1717,7 +1717,74 @@ function displayGeneratedImage(prompt, dataUrl) {
 
     return div;
 }
-\n\nfunction looksLikeImageEditRequest(text) {\n    const value = (text || "").toLowerCase().trim();\n    if (!value) return false;\n\n    const analysisPatterns = [\n        /\\b(what is|what's|describe|analyze|analyse|read|extract|identify|who is|what does)\\b/i,\n        /\\b(kya hai|kya dikh raha|kaun hai|padh ke bata|samjha|analyze kar)\\b/i\n    ];\n    if (analysisPatterns.some(pattern => pattern.test(value))) return false;\n\n    const editWords = [\n        "edit", "change", "modify", "remove", "add", "replace", "fix",\n        "enhance", "improve", "clear", "sharpen", "restore", "retouch",\n        "background", "blur", "crop", "resize", "color", "colour",\n        "brightness", "lighting", "hd", "quality", "make it", "turn it",\n        "bana de", "bana do", "change kar", "remove kar", "add kar",\n        "background hata", "background change", "clear kar", "enhance kar",\n        "quality badha", "saaf kar", "thoda clear", "blur kar"\n    ];\n\n    return editWords.some(word => value.includes(word));\n}\n\nasync function editUploadedImage(prompt) {\n    const button = document.getElementById("sendButton");\n    if (!visionFile || !prompt) return false;\n\n    const thinking = displayMessage(\n        "assistant",\n        "🎨 RAIZEN is editing your image...",\n        "thinking"\n    );\n\n    try {\n        const formData = new FormData();\n        formData.append("file", visionFile);\n        formData.append("prompt", prompt);\n        formData.append("token", authToken);\n\n        const response = await fetch("/edit-image", {\n            method: "POST",\n            body: formData\n        });\n\n        const data = await response.json();\n        if (thinking) thinking.remove();\n\n        if (data.error) {\n            displayMessage("assistant", "⚠️ " + data.error);\n            chatHistory.push({role: "user", content: prompt});\n            chatHistory.push({role: "assistant", content: data.error});\n        } else {\n            displayGeneratedImage("Edited: " + prompt, data.image);\n            chatHistory.push({role: "user", content: prompt});\n            chatHistory.push({role: "assistant", content: "[Edited image]"});\n        }\n\n        saveCurrentChat();\n        return true;\n    } catch (error) {\n        if (thinking) thinking.remove();\n        displayMessage("assistant", "⚠️ Image editing failed. Please try again.");\n        return true;\n    }\n}\n
+
+
+function looksLikeImageEditRequest(text) {
+    const value = (text || "").toLowerCase().trim();
+    if (!value) return false;
+
+    const analysisPatterns = [
+        /\\b(what is|what's|describe|analyze|analyse|read|extract|identify|who is|what does)\\b/i,
+        /\\b(kya hai|kya dikh raha|kaun hai|padh ke bata|samjha|analyze kar)\\b/i
+    ];
+    if (analysisPatterns.some(pattern => pattern.test(value))) return false;
+
+    const editWords = [
+        "edit", "change", "modify", "remove", "add", "replace", "fix",
+        "enhance", "improve", "clear", "sharpen", "restore", "retouch",
+        "background", "blur", "crop", "resize", "color", "colour",
+        "brightness", "lighting", "hd", "quality", "make it", "turn it",
+        "bana de", "bana do", "change kar", "remove kar", "add kar",
+        "background hata", "background change", "clear kar", "enhance kar",
+        "quality badha", "saaf kar", "thoda clear", "blur kar"
+    ];
+
+    return editWords.some(word => value.includes(word));
+}
+
+async function editUploadedImage(prompt) {
+    const button = document.getElementById("sendButton");
+    if (!visionFile || !prompt) return false;
+
+    const thinking = displayMessage(
+        "assistant",
+        "🎨 RAIZEN is editing your image...",
+        "thinking"
+    );
+
+    try {
+        const formData = new FormData();
+        formData.append("file", visionFile);
+        formData.append("prompt", prompt);
+        formData.append("token", authToken);
+
+        const response = await fetch("/edit-image", {
+            method: "POST",
+            body: formData
+        });
+
+        const data = await response.json();
+        if (thinking) thinking.remove();
+
+        if (data.error) {
+            displayMessage("assistant", "⚠️ " + data.error);
+            chatHistory.push({role: "user", content: prompt});
+            chatHistory.push({role: "assistant", content: data.error});
+        } else {
+            displayGeneratedImage("Edited: " + prompt, data.image);
+            chatHistory.push({role: "user", content: prompt});
+            chatHistory.push({role: "assistant", content: "[Edited image]"});
+        }
+
+        saveCurrentChat();
+        return true;
+    } catch (error) {
+        if (thinking) thinking.remove();
+        displayMessage("assistant", "⚠️ Image editing failed. Please try again.");
+        return true;
+    }
+}
+
 
 window.sendMessage = async function sendMessage() {
     const input = document.getElementById("messageInput");
