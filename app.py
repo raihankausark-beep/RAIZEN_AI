@@ -1601,7 +1601,7 @@ function looksLikeImageRequest(text) {
 async function generateImageFromPrompt(prompt) {
     const button = document.getElementById("sendButton");
 
-    if (!prompt || button.disabled) return;
+    if (!prompt) return;
 
     button.disabled = true;
 
