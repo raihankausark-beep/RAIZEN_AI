@@ -1046,7 +1046,8 @@ async function checkLogin(){
         const data = await response.json();
 
         if (data.ok && data.user) {
-            authToken = 
+            authToken = data.token;
+            loggedInUsername = 
                 data.username ||
                 data.user.email ||
                 data.user.name
