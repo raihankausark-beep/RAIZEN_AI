@@ -59,7 +59,7 @@ async def logout(request: Request):
 
     params = urlencode({
         "client_id": client_id,
-        "returnTo": "https://raizen-ai.onrender.com/login"
+        "returnTo": "https://raizen-ai.onrender.com"
     })
 
     return RedirectResponse(
