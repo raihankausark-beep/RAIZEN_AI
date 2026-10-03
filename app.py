@@ -1539,29 +1539,44 @@ function usePrompt(text) {
 function looksLikeImageRequest(text) {
     const value = (text || "").toLowerCase().trim();
 
-    // A single prompt box: image nouns alone can be enough.
-    // Examples: "a school image", "image of a dog", "applied mathematics poster".
+    // Natural English + Hinglish image intent.
+    // Examples:
+    // "bhai ek cute dog ki photo bana de"
+    // "ek school ka poster bana do"
+    // "mujhe sunset ki tasveer chahiye"
+    // "dog ka image bana"
+    // "create the image of a dog"
+
+    if (!value || value === "generate" || value === "create" || value === "make") {
+        return false;
+    }
+
     const visualWords = [
         "image", "picture", "photo", "poster", "logo", "wallpaper",
         "illustration", "artwork", "banner", "thumbnail", "portrait",
         "icon", "cover", "flyer", "diagram", "infographic", "drawing",
-        "scene", "character", "mascot", "sticker", "comic"
+        "scene", "character", "mascot", "sticker", "comic",
+        "tasveer", "tasvir", "photo", "pic", "chitra", "naksha",
+        "wallpaper", "design", "sketch"
     ];
 
     const imageVerbs = [
-        "create", "generate", "make", "draw", "design",
-        "render", "illustrate", "paint", "show"
+        "create", "generate", "make", "draw", "design", "render",
+        "illustrate", "paint", "show", "bana", "banao", "banade",
+        "bana de", "bana do", "banado", "dikha", "dikhao", "dikha de",
+        "tayyar", "tayyar karo", "bana dena", "banani", "banani hai",
+        "chahiye", "chahta", "chahti"
     ];
 
-    const hasVisualWord = visualWords.some(word =>
-        new RegExp("\\b" + word + "\\b", "i").test(value)
-    );
+    const hinglishImagePatterns = [
+        /\b(?:ek|a|koi|mujhe|mere\s+liye|bhai)\b.*\b(?:image|photo|pic|poster|logo|wallpaper|tasveer|tasvir|chitra|drawing|sketch)\b/i,
+        /\b(?:image|photo|pic|poster|logo|wallpaper|tasveer|tasvir|chitra|drawing|sketch)\b.*\b(?:bana|banao|banade|bana\s+de|bana\s+do|dikha|dikhao|chahiye)\b/i,
+        /\b(?:dog|cat|school|college|car|girl|boy|man|woman|sunset|mountain|city|dragon|robot|house|village|nature)\b.*\b(?:ka|ki|ke|wali|wala|walla)\b.*\b(?:bana|banao|banade|bana\s+de|bana\s+do|dikha|dikhao)\b/i,
+        /\b(?:ka|ki|ke)\b.*\b(?:image|photo|poster|logo|wallpaper|tasveer|tasvir)\b.*\b(?:bana|banao|banade|bana\s+de|bana\s+do|chahiye)\b/i,
+        /\b(?:ek|a)\s+.+\b(?:bana|banao|banade|bana\s+de|bana\s+do)\b/i
+    ];
 
-    const hasImageVerb = imageVerbs.some(word =>
-        new RegExp("\\b" + word + "\\b", "i").test(value)
-    );
-
-    const imageObjectPatterns = [
+    const englishImagePatterns = [
         /\bimage\s+of\b/i,
         /\bpicture\s+of\b/i,
         /\bphoto\s+of\b/i,
@@ -1569,7 +1584,10 @@ function looksLikeImageRequest(text) {
         /\blogo\s+for\b/i,
         /\bwallpaper\s+of\b/i,
         /\bportrait\s+of\b/i,
-        /\bdiagram\s+of\b/i
+        /\bdiagram\s+of\b/i,
+        /\bcreate\s+(?:the\s+)?(?:image|picture|photo|poster|logo|wallpaper)\b/i,
+        /\bgenerate\s+(?:the\s+)?(?:image|picture|photo|poster|logo|wallpaper)\b/i,
+        /\bmake\s+(?:the\s+)?(?:image|picture|photo|poster|logo|wallpaper)\b/i
     ];
 
     const directImagePhrases = [
@@ -1583,20 +1601,25 @@ function looksLikeImageRequest(text) {
         "create an image",
         "make an image",
         "generate a picture",
-        "create a picture"
+        "create a picture",
+        "generate a photo",
+        "create a photo"
     ];
 
-    // "generate" alone should remain normal chat so RAIZEN can ask what to generate.
-    if (!value || value === "generate" || value === "create" || value === "make") {
-        return false;
-    }
+    const hasVisualWord = visualWords.some(word =>
+        new RegExp("(?:^|\\s)" + word.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&") + "(?:$|\\s)", "i").test(value)
+    );
+
+    const hasImageVerb = imageVerbs.some(word =>
+        value.includes(word)
+    );
 
     return directImagePhrases.some(phrase => value.includes(phrase))
-        || imageObjectPatterns.some(pattern => pattern.test(value))
+        || englishImagePatterns.some(pattern => pattern.test(value))
+        || hinglishImagePatterns.some(pattern => pattern.test(value))
         || (hasVisualWord && hasImageVerb)
-        || (hasVisualWord && value.split(/\s+/).length <= 8);
+        || (hasVisualWord && value.split(/\s+/).length <= 10);
 }
-
 
 async function generateImageFromPrompt(prompt) {
     const button = document.getElementById("sendButton");
