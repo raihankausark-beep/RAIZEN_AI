@@ -2469,7 +2469,6 @@ async def generate_image(request: ImageRequest):
         image = image_client.text_to_image(
             prompt,
             model=IMAGE_MODEL,
-            provider="fal-ai",
             negative_prompt=request.negative_prompt.strip() or None,
             width=768,
             height=768,
@@ -2488,7 +2487,7 @@ async def generate_image(request: ImageRequest):
     except Exception as error:
         print("IMAGE GENERATION ERROR:", error)
         return {
-            "error": f"Image generation failed: {type(error).__name__}: {str(error)[:500]}"
+            "error": "Image generation is temporarily unavailable. Please try again."
         }
 
 
