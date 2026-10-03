@@ -1633,30 +1633,47 @@ function displayGeneratedImage(prompt, dataUrl) {
     const chat = document.getElementById("chat");
 
     const div = document.createElement("div");
-    div.className = "message assistant";
-
-    const title = document.createElement("div");
-    title.innerHTML = "<strong>🎨 Generated Image</strong><br>" + escapeHtml(prompt);
+    div.className = "message assistant image-result";
 
     const img = document.createElement("img");
     img.src = dataUrl;
     img.alt = prompt;
+    img.loading = "eager";
+    img.style.width = "min(768px, 100%)";
     img.style.maxWidth = "100%";
-    img.style.width = "768px";
+    img.style.height = "auto";
     img.style.borderRadius = "18px";
-    img.style.marginTop = "12px";
     img.style.display = "block";
+    img.style.margin = "0";
+    img.style.objectFit = "contain";
+    img.onerror = function() {
+        div.innerHTML = "<div>⚠️ The generated image could not be displayed.</div>";
+    };
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.alignItems = "center";
+    actions.style.gap = "10px";
+    actions.style.marginTop = "10px";
 
     const download = document.createElement("a");
     download.href = dataUrl;
     download.download = "raizen-generated-image.png";
-    download.textContent = "⬇️ Save Image";
+    download.textContent = "⬇️ Save image";
     download.style.display = "inline-block";
-    download.style.marginTop = "10px";
 
-    div.appendChild(title);
+    const promptLabel = document.createElement("span");
+    promptLabel.textContent = prompt;
+    promptLabel.style.color = "#999";
+    promptLabel.style.fontSize = "12px";
+    promptLabel.style.overflow = "hidden";
+    promptLabel.style.textOverflow = "ellipsis";
+    promptLabel.style.whiteSpace = "nowrap";
+
+    actions.appendChild(download);
+    actions.appendChild(promptLabel);
     div.appendChild(img);
-    div.appendChild(download);
+    div.appendChild(actions);
 
     chat.appendChild(div);
     chat.scrollTop = chat.scrollHeight;
