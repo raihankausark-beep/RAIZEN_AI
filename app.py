@@ -1069,7 +1069,8 @@ button{color:inherit}
       <div class="brand-pill"><span>✦</span> RAIZEN</div>
     </div>
     <div class="top-right">
-      <button class="icon-btn" aria-label="New chat" onclick="newChat()">◌</button>
+      <button class="icon-btn" aria-label="New chat" title="New chat" onclick="newChat()">◌</button>
+      <button class="icon-btn" aria-label="Clear chat" title="Clear chat" onclick="clearChat()">🗑️</button>
       <div class="account-wrap">
   <button id="accountPill" class="account-pill" onclick="toggleAccountMenu()">
     <img id="accountAvatar" src="" alt="Account">
