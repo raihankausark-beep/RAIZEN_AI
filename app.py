@@ -5,6 +5,7 @@ import base64
 import hashlib
 import secrets
 import time
+from urllib.parse import urlencode
 from datetime import datetime, timezone
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -56,11 +57,14 @@ async def logout(request: Request):
     domain = os.getenv("AUTH0_DOMAIN")
     client_id = os.getenv("AUTH0_CLIENT_ID")
 
-    return RedirectResponse(
-        f"https://{domain}/v2/logout"
-        f"?client_id={client_id}"
-        f"&returnTo=https://raizen-ai.onrender.com/login"
-    )
+    params = urlencode({
+    "client_id": client_id,
+    "returnTo": "https://raizen-ai.onrender.com/login"
+})
+
+return RedirectResponse(
+    f"https://{domain}/v2/logout?{params}"
+)
 
     
 @app.get("/auth/user")
