@@ -1848,26 +1848,41 @@ window.sendMessage = async function sendMessage() {
             return;
         }
 
-        const response = await fetch("/chat", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                token: authToken,
-                message: message,
-                history: chatHistory.slice(-30),
-                personality:
-                    document.getElementById("personality").value,
-                response_style:
-                    document.getElementById("responseStyle").value,
-                custom_instructions:
-                    localStorage.getItem(
-                        "raizen_custom_instructions"
-                    ) || "",
-                document_text: documentText
-            })
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 90000);
+
+        let response;
+        try {
+            response = await fetch("/chat", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    token: authToken,
+                    message: message,
+                    history: chatHistory.slice(-30),
+                    personality:
+                        document.getElementById("personality").value,
+                    response_style:
+                        document.getElementById("responseStyle").value,
+                    custom_instructions:
+                        localStorage.getItem(
+                            "raizen_custom_instructions"
+                        ) || "",
+                    document_text: documentText
+                }),
+                signal: controller.signal
+            });
+        } finally {
+            clearTimeout(timeoutId);
+        }
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error("RAIZEN /chat HTTP ERROR:", response.status, errorText);
+            throw new Error("/chat returned HTTP " + response.status);
+        }
 
         const data = await response.json();
 
@@ -1875,6 +1890,7 @@ window.sendMessage = async function sendMessage() {
 
         const reply =
             data.reply ||
+            data.error ||
             "Sorry, I could not generate a response.";
 
         displayMessage("assistant", reply);
@@ -1889,8 +1905,11 @@ window.sendMessage = async function sendMessage() {
     } catch (error) {
         if (thinking) thinking.remove();
 
-        const reply =
-            "⚠️ Something went wrong. Please try again.";
+        console.error("RAIZEN CHAT ERROR:", error);
+
+        const reply = error && error.name === "AbortError"
+            ? "⚠️ RAIZEN took too long to respond. Please try again."
+            : "⚠️ RAIZEN could not reach the AI service. Please try again.";
 
         displayMessage("assistant", reply);
 
@@ -1923,7 +1942,11 @@ function newChat() {
 }
 
 document.getElementById("messageInput").addEventListener("keydown", function(event) {
-    if (event.key === "Enter") { event.preventDefault(); sendMessage(); }
+    if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        window.sendMessage();
+    }
 });
 
 function loadChatHistory() {
