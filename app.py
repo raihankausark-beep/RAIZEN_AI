@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 from fastapi import FastAPI, Request, UploadFile, File, Form
 from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
-from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
 import psycopg
@@ -189,6 +189,7 @@ image_edit_client = InferenceClient(provider="fal-ai", api_key=HF_TOKEN)
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+ADMIN_EMAIL = (os.getenv("ADMIN_EMAIL") or "").strip().lower()
 AUTH_TOKEN_TTL = 60 * 60 * 24 * 7
 
 
@@ -1101,6 +1102,7 @@ button{color:inherit}
       </div>
     </div>
 
+    <button id="adminMenuButton" style="display:none" onclick="window.location.href='/admin'">🛡️ Admin Dashboard</button>
     <button onclick="logout()">🚪 Logout</button>
   </div>
 </div>
@@ -1211,6 +1213,17 @@ async function checkLogin(){
             if (accountName) accountName.textContent = data.user.name || loggedInUsername;
             if (menuName) menuName.textContent = data.user.name || "User";
             if (menuEmail) menuEmail.textContent = data.user.email || loggedInUsername;
+
+            try {
+                const adminResponse = await fetch("/admin/check");
+                const adminData = await adminResponse.json();
+                const adminButton = document.getElementById("adminMenuButton");
+                if (adminButton) {
+                    adminButton.style.display = adminData.is_admin ? "block" : "none";
+                }
+            } catch (adminError) {
+                console.warn("ADMIN CHECK ERROR:", adminError);
+            }
 
             showAppAfterLogin();
         } else {
@@ -2223,6 +2236,277 @@ async def logout(token: str = ""):
         except Exception as error:
             print("LOGOUT ERROR:", error)
     return {"ok": True}
+
+
+@app.get("/admin/check")
+async def admin_check(request: Request):
+    user = request.session.get("user") or {}
+    email = (user.get("email") or "").strip().lower()
+    return {"is_admin": bool(ADMIN_EMAIL and email and email == ADMIN_EMAIL)}
+
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_page(request: Request):
+    user = request.session.get("user") or {}
+    email = (user.get("email") or "").strip().lower()
+
+    if not email:
+        return RedirectResponse(url="/login")
+
+    if not ADMIN_EMAIL:
+        return HTMLResponse(
+            content="""
+            <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1.0">
+            <title>RAIZEN Admin Setup</title>
+            <style>body{margin:0;background:#050505;color:#fff;font-family:Arial,sans-serif;display:grid;place-items:center;min-height:100vh;padding:24px}div{max-width:650px;background:#111;border:1px solid #292929;border-radius:18px;padding:28px}code{background:#222;padding:4px 7px;border-radius:6px;color:#7fb0ff}p{color:#aaa;line-height:1.6}</style>
+            </head><body><div><h2>⚡ RAIZEN Admin Setup</h2>
+            <p>The admin dashboard is installed, but the <code>ADMIN_EMAIL</code> Render environment variable is not configured.</p>
+            <p>Add <code>ADMIN_EMAIL</code> in Render using the same Google email used for your RAIZEN admin account, then redeploy.</p>
+            <p><a href="/" style="color:#79adff">← Back to RAIZEN</a></p></div></body></html>
+            """,
+            status_code=503,
+            media_type="text/html"
+        )
+
+    if email != ADMIN_EMAIL:
+        return HTMLResponse(
+            content="""
+            <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1.0">
+            <title>RAIZEN Admin</title><style>body{margin:0;background:#050505;color:#fff;font-family:Arial,sans-serif;display:grid;place-items:center;min-height:100vh;padding:24px}div{max-width:520px;text-align:center;background:#111;border:1px solid #292929;border-radius:18px;padding:28px}p{color:#aaa}</style></head>
+            <body><div><h2>🔒 Admin access denied</h2><p>This Google account is not configured as the RAIZEN administrator.</p><p><a href="/" style="color:#79adff">← Back to RAIZEN</a></p></div></body></html>
+            """,
+            status_code=403,
+            media_type="text/html"
+        )
+
+    html = r"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAIZEN Admin</title>
+<style>
+:root{--bg:#050505;--panel:#111;--line:#292929;--text:#f5f5f5;--muted:#9a9a9a;--blue:#4d8dff;--red:#ff5c67;--green:#35d07f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+.wrap{max-width:1150px;margin:auto;padding:28px 18px 50px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:24px}
+.brand{font-size:25px;font-weight:800}.brand span{color:var(--blue)}
+.actions{display:flex;gap:8px}
+button{border:1px solid var(--line);background:#171717;color:#fff;border-radius:10px;padding:10px 14px;cursor:pointer}
+button:hover{background:#222}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px}
+.label{color:var(--muted);font-size:12px}.value{font-size:28px;font-weight:800;margin-top:8px}
+.table-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.table-head{padding:18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:13px 14px;border-bottom:1px solid #202020;font-size:13px}th{color:#aaa;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+.badge{display:inline-block;padding:5px 8px;border-radius:999px;font-size:11px}
+.active{background:rgba(53,208,127,.12);color:var(--green)}
+.inactive{background:rgba(255,92,103,.12);color:var(--red)}
+.manage{padding:7px 10px;font-size:12px}.deactivate{border-color:#553036;color:#ff8a92}.activate{border-color:#294b3a;color:#6ee7a4}
+.empty{text-align:center;color:#777;padding:35px}
+#status{color:#999;font-size:12px}
+@media(max-width:700px){.grid{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}table{min-width:760px}.table-card{overflow-x:auto}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="brand">⚡ <span>RAIZEN</span> Admin Dashboard</div>
+    <div class="actions">
+      <button onclick="loadUsers()">↻ Refresh</button>
+      <button onclick="location.href='/'">← RAIZEN</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card"><div class="label">Total users</div><div id="totalUsers" class="value">—</div></div>
+    <div class="card"><div class="label">Active users</div><div id="activeUsers" class="value">—</div></div>
+    <div class="card"><div class="label">Active sessions</div><div id="sessions" class="value">—</div></div>
+  </div>
+
+  <div class="table-card">
+    <div class="table-head">
+      <strong>User management</strong>
+      <span id="status">Loading...</span>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Account</th><th>Created</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody id="usersBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+async function loadUsers(){
+  const status=document.getElementById("status");
+  status.textContent="Loading...";
+  try{
+    const r=await fetch("/admin/api/users");
+    const data=await r.json();
+    if(!r.ok || !data.ok) throw new Error(data.message || "Could not load users.");
+
+    document.getElementById("totalUsers").textContent=data.total_users;
+    document.getElementById("activeUsers").textContent=data.active_users;
+    document.getElementById("sessions").textContent=data.active_sessions;
+
+    const body=document.getElementById("usersBody");
+    body.innerHTML="";
+    if(!data.users.length){
+      body.innerHTML='<tr><td colspan="4" class="empty">No users yet.</td></tr>';
+    }else{
+      data.users.forEach(u=>{
+        const tr=document.createElement("tr");
+        const created=new Date(u.created_at).toLocaleString();
+        const statusClass=u.is_active?"active":"inactive";
+        const statusText=u.is_active?"Active":"Deactivated";
+        const action=u.is_active
+          ? `<button class="manage deactivate" onclick="setUser('${encodeURIComponent(u.username_key)}',false)">Deactivate</button>`
+          : `<button class="manage activate" onclick="setUser('${encodeURIComponent(u.username_key)}',true)">Activate</button>`;
+        tr.innerHTML=
+          `<td>${escapeHtml(u.username)}</td>`+
+          `<td>${escapeHtml(created)}</td>`+
+          `<td><span class="badge ${statusClass}">${statusText}</span></td>`+
+          `<td>${action}</td>`;
+        body.appendChild(tr);
+      });
+    }
+    status.textContent="Updated just now";
+  }catch(e){
+    status.textContent=e.message;
+  }
+}
+
+async function setUser(key,active){
+  const action=active?"activate":"deactivate";
+  if(!confirm(`Are you sure you want to ${action} this account?`)) return;
+  try{
+    const r=await fetch("/admin/api/user-status",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({username_key:decodeURIComponent(key),is_active:active})
+    });
+    const data=await r.json();
+    if(!r.ok || !data.ok) throw new Error(data.message || "Action failed.");
+    await loadUsers();
+  }catch(e){ alert(e.message); }
+}
+
+function escapeHtml(value){
+  return String(value)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;")
+    .replace(/'/g,"&#039;");
+}
+loadUsers();
+</script>
+</body>
+</html>
+"""
+    return HTMLResponse(content=html)
+
+
+@app.get("/admin/api/users")
+async def admin_users(request: Request):
+    if not is_admin_request(request):
+        return admin_denied()
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT
+                        u.username_key,
+                        u.username,
+                        u.created_at,
+                        COALESCE(c.is_active, TRUE) AS is_active
+                    FROM raizen_users u
+                    LEFT JOIN raizen_user_controls c
+                      ON c.username_key = u.username_key
+                    ORDER BY u.created_at DESC
+                """)
+                users = cur.fetchall()
+
+                cur.execute("""
+                    SELECT COUNT(*) AS count
+                    FROM raizen_sessions s
+                    LEFT JOIN raizen_user_controls c
+                      ON c.username_key = s.username_key
+                    WHERE s.expires_at > NOW()
+                      AND COALESCE(c.is_active, TRUE) = TRUE
+                """)
+                active_sessions = cur.fetchone()["count"]
+
+        active_users = sum(1 for u in users if u["is_active"])
+        return {
+            "ok": True,
+            "total_users": len(users),
+            "active_users": active_users,
+            "active_sessions": active_sessions,
+            "users": [
+                {
+                    "username_key": u["username_key"],
+                    "username": u["username"],
+                    "created_at": u["created_at"].isoformat(),
+                    "is_active": bool(u["is_active"])
+                }
+                for u in users
+            ]
+        }
+    except Exception as error:
+        print("ADMIN USERS ERROR:", error)
+        return {"ok": False, "message": "Could not load user management data."}
+
+
+class AdminUserStatusRequest(BaseModel):
+    username_key: str
+    is_active: bool
+
+
+@app.post("/admin/api/user-status")
+async def admin_user_status(request: Request, body: AdminUserStatusRequest):
+    if not is_admin_request(request):
+        return admin_denied()
+
+    username_key = body.username_key.strip().lower()
+    if not username_key:
+        return {"ok": False, "message": "Invalid account."}
+
+    if ADMIN_EMAIL and username_key == ADMIN_EMAIL:
+        return {"ok": False, "message": "The admin account cannot be deactivated."}
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO raizen_user_controls
+                       (username_key, is_active, updated_at)
+                       VALUES (%s, %s, NOW())
+                       ON CONFLICT (username_key)
+                       DO UPDATE SET is_active = EXCLUDED.is_active,
+                                     updated_at = NOW()""",
+                    (username_key, body.is_active)
+                )
+
+                if not body.is_active:
+                    cur.execute(
+                        "DELETE FROM raizen_sessions WHERE username_key = %s",
+                        (username_key,)
+                    )
+            conn.commit()
+
+        return {
+            "ok": True,
+            "message": "Account activated." if body.is_active else "Account deactivated."
+        }
+    except Exception as error:
+        print("ADMIN USER STATUS ERROR:", error)
+        return {"ok": False, "message": "Could not update account status."}
+
+
 
 
 @app.get("/creator-dashboard")
