@@ -228,6 +228,13 @@ def init_database():
                         expires_at TIMESTAMPTZ NOT NULL
                     )
                 """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS raizen_user_controls (
+                        username_key TEXT PRIMARY KEY REFERENCES raizen_users(username_key) ON DELETE CASCADE,
+                        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                """)
                 cur.execute("DELETE FROM raizen_sessions WHERE expires_at < NOW()")
             conn.commit()
         migrate_legacy_users()
@@ -2345,8 +2352,19 @@ async function loadUsers(){
   const status=document.getElementById("status");
   status.textContent="Loading...";
   try{
-    const r=await fetch("/admin/api/users");
-    const data=await r.json();
+    const r=await fetch("/admin/api/users",{
+      method:"GET",
+      headers:{"Accept":"application/json"},
+      credentials:"same-origin",
+      cache:"no-store"
+    });
+    const raw=await r.text();
+    let data={};
+    try{ data=raw ? JSON.parse(raw) : {}; }
+    catch(parseError){
+      console.error("RAIZEN ADMIN USERS NON-JSON RESPONSE:",raw);
+      throw new Error("Admin API returned a non-JSON response (HTTP "+r.status+").");
+    }
     if(!r.ok || !data.ok) throw new Error(data.message || "Could not load users.");
 
     document.getElementById("totalUsers").textContent=data.total_users;
@@ -2411,10 +2429,11 @@ loadUsers();
 
 @app.get("/admin/api/users")
 async def admin_users(request: Request):
-    if not is_admin_request(request):
-        return admin_denied()
-
+    # Keep this endpoint JSON-only so HTML 500 pages never reach the admin UI.
     try:
+        if not is_admin_request(request):
+            return JSONResponse({"ok": False, "message": "Admin access denied."}, status_code=403)
+
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
@@ -2438,27 +2457,41 @@ async def admin_users(request: Request):
                     WHERE s.expires_at > NOW()
                       AND COALESCE(c.is_active, TRUE) = TRUE
                 """)
-                active_sessions = cur.fetchone()["count"]
+                active_sessions_row = cur.fetchone()
 
-        active_users = sum(1 for u in users if u["is_active"])
-        return {
-            "ok": True,
-            "total_users": len(users),
-            "active_users": active_users,
-            "active_sessions": active_sessions,
-            "users": [
-                {
-                    "username_key": u["username_key"],
-                    "username": u["username"],
-                    "created_at": u["created_at"].isoformat(),
-                    "is_active": bool(u["is_active"])
-                }
-                for u in users
-            ]
-        }
+        safe_users=[]
+        for u in users:
+            created_at=u.get("created_at")
+            if hasattr(created_at,"isoformat"):
+                created_at=created_at.isoformat()
+            elif created_at is None:
+                created_at=""
+            else:
+                created_at=str(created_at)
+            safe_users.append({
+                "username_key":str(u.get("username_key") or ""),
+                "username":str(u.get("username") or ""),
+                "created_at":created_at,
+                "is_active":bool(u.get("is_active",True))
+            })
+
+        active_users=sum(1 for u in safe_users if u["is_active"])
+        active_sessions=int((active_sessions_row or {}).get("count",0) or 0)
+
+        return JSONResponse({
+            "ok":True,
+            "total_users":len(safe_users),
+            "active_users":active_users,
+            "active_sessions":active_sessions,
+            "users":safe_users
+        })
     except Exception as error:
-        print("ADMIN USERS ERROR:", error)
-        return {"ok": False, "message": "Could not load user management data."}
+        print("ADMIN USERS ERROR:",repr(error))
+        return JSONResponse({
+            "ok":False,
+            "message":"Could not load user management data.",
+            "error_type":type(error).__name__
+        },status_code=500)
 
 
 class AdminUserStatusRequest(BaseModel):
