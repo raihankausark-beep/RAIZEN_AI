@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 from fastapi import FastAPI, Request, UploadFile, File, Form
 from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
 import psycopg
@@ -342,6 +342,7 @@ class ChatRequest(BaseModel):
     response_style: str = "Balanced"
     custom_instructions: str = ""
     document_text: str = ""
+    stream: bool = False
 
 
 
@@ -415,12 +416,25 @@ def chat_completion_with_retry(messages, max_tokens):
     last_error = None
     for attempt in range(3):
         try:
-            return client.chat.completions.create(model=MODEL, messages=messages, max_tokens=max_tokens)
+            return client.chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                max_tokens=max_tokens
+            )
         except Exception as error:
             last_error = error
             if attempt < 2:
                 time.sleep(1.2 * (attempt + 1))
     raise last_error
+
+
+def chat_completion_stream(messages, max_tokens):
+    return client.chat.completions.create(
+        model=MODEL,
+        messages=messages,
+        max_tokens=max_tokens,
+        stream=True
+    )
 
 
 def needs_live_search(message):
@@ -1527,6 +1541,13 @@ function displayMessage(role, text, extraClass) {
     return div;
 }
 
+function updateMessage(div, text) {
+    if (!div) return;
+    div.innerHTML = linkify(escapeHtml(text));
+    const chat = document.getElementById("chat");
+    if (chat) chat.scrollTop = chat.scrollHeight;
+}
+
 function usePrompt(text) {
     const input = document.getElementById("messageInput");
     input.value = text;
@@ -1888,7 +1909,8 @@ window.sendMessage = async function sendMessage() {
                         localStorage.getItem(
                             "raizen_custom_instructions"
                         ) || "",
-                    document_text: documentText
+                    document_text: documentText,
+                    stream: true
                 }),
                 signal: controller.signal
             });
@@ -1902,16 +1924,70 @@ window.sendMessage = async function sendMessage() {
             throw new Error("/chat returned HTTP " + response.status);
         }
 
-        const data = await response.json();
+        const contentType = response.headers.get("content-type") || "";
+        let reply = "";
 
-        if (thinking) thinking.remove();
+        if (contentType.includes("text/event-stream")) {
+            if (thinking) thinking.remove();
 
-        const reply =
-            data.reply ||
-            data.error ||
-            "Sorry, I could not generate a response.";
+            const streamedMessage = displayMessage("assistant", "");
+            let buffer = "";
+            let streamDone = false;
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder("utf-8");
 
-        lastNormalAssistantMessage = displayMessage("assistant", reply);
+            while (!streamDone) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const events = buffer.split("\n\n");
+                buffer = events.pop() || "";
+
+                for (const event of events) {
+                    const line = event.split("\n").find(item => item.startsWith("data: "));
+                    if (!line) continue;
+
+                    const payload = line.slice(6).trim();
+                    if (payload === "[DONE]") {
+                        streamDone = true;
+                        break;
+                    }
+
+                    try {
+                        const parsed = JSON.parse(payload);
+                        if (parsed.error) {
+                            throw new Error(parsed.error);
+                        }
+                        if (parsed.token) {
+                            reply += parsed.token;
+                            updateMessage(streamedMessage, reply);
+                        }
+                    } catch (parseError) {
+                        if (parseError.message && parseError.message.startsWith("⚠️")) {
+                            throw parseError;
+                        }
+                    }
+                }
+            }
+
+            if (!reply) {
+                reply = "Sorry, I could not generate a response.";
+                updateMessage(streamedMessage, reply);
+            }
+
+            lastNormalAssistantMessage = streamedMessage;
+        } else {
+            const data = await response.json();
+            reply =
+                data.reply ||
+                data.error ||
+                "Sorry, I could not generate a response.";
+
+            if (thinking) thinking.remove();
+            lastNormalAssistantMessage = displayMessage("assistant", reply);
+        }
+
         const actions = document.createElement("div");
         actions.className = "message-actions";
         const regen = document.createElement("button");
@@ -2426,6 +2502,43 @@ Uploaded document:
             "role": "user",
             "content": message
         })
+
+    if request.stream:
+        def event_stream():
+            try:
+                stream = chat_completion_stream(
+                    messages,
+                    MAX_CHAT_OUTPUT_TOKENS
+                )
+
+                for chunk in stream:
+                    try:
+                        choice = chunk.choices[0]
+                        delta = getattr(choice.delta, "content", None)
+                    except Exception:
+                        delta = None
+
+                    if delta:
+                        yield "data: " + json.dumps({"token": delta}, ensure_ascii=False) + "\n\n"
+
+                yield "data: [DONE]\n\n"
+
+            except Exception as error:
+                print("RAIZEN STREAM ERROR:", error)
+                yield "data: " + json.dumps({
+                    "error": "⚠️ RAIZEN is temporarily unable to respond. Please try again."
+                }, ensure_ascii=False) + "\n\n"
+                yield "data: [DONE]\n\n"
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
 
     try:
         response = chat_completion_with_retry(
