@@ -182,10 +182,10 @@ VISION_MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
 vision_client = InferenceClient(api_key=HF_TOKEN)
 
 IMAGE_MODEL = "black-forest-labs/FLUX.1-schnell"
-IMAGE_EDIT_MODEL = "Qwen/Qwen-Image-Edit"
+IMAGE_EDIT_MODEL = "black-forest-labs/FLUX.1-Kontext-dev"
 
 image_client = InferenceClient(api_key=HF_TOKEN)
-image_edit_client = InferenceClient(provider="fal-ai", api_key=HF_TOKEN)
+image_edit_client = InferenceClient(api_key=HF_TOKEN)
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -2394,7 +2394,7 @@ async function loadUsers(){
     }
     status.textContent="Updated just now";
   }catch(e){
-    status.textContent=e.message || "Could not load user management data.";
+    status.textContent=e.message;
   }
 }
 
@@ -2429,31 +2429,13 @@ loadUsers();
 
 @app.get("/admin/api/users")
 async def admin_users(request: Request):
-    """Return admin user-management data as JSON only.
-
-    This endpoint is intentionally defensive so a database/schema problem never
-    turns into an HTML error page that the admin dashboard tries to parse as JSON.
-    """
-    if not is_admin_request(request):
-        return JSONResponse(
-            {"ok": False, "message": "Admin access denied."},
-            status_code=403
-        )
-
+    # Keep this endpoint JSON-only so HTML 500 pages never reach the admin UI.
     try:
+        if not is_admin_request(request):
+            return JSONResponse({"ok": False, "message": "Admin access denied."}, status_code=403)
+
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                # Self-heal the controls table if an older database was created
-                # before admin controls were added.
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS raizen_user_controls (
-                        username_key TEXT PRIMARY KEY
-                            REFERENCES raizen_users(username_key) ON DELETE CASCADE,
-                        is_active BOOLEAN NOT NULL DEFAULT TRUE,
-                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                    )
-                """)
-
                 cur.execute("""
                     SELECT
                         u.username_key,
@@ -2475,60 +2457,41 @@ async def admin_users(request: Request):
                     WHERE s.expires_at > NOW()
                       AND COALESCE(c.is_active, TRUE) = TRUE
                 """)
-                session_row = cur.fetchone()
+                active_sessions_row = cur.fetchone()
 
-            conn.commit()
-
-        # psycopg dict_row is used by RAIZEN, but keep this compatible with
-        # tuple-style rows too, so the endpoint cannot fail on row configuration.
-        safe_users = []
-        for row in users:
-            if hasattr(row, "get"):
-                username_key = row.get("username_key")
-                username = row.get("username")
-                created_at = row.get("created_at")
-                is_active = row.get("is_active", True)
+        safe_users=[]
+        for u in users:
+            created_at=u.get("created_at")
+            if hasattr(created_at,"isoformat"):
+                created_at=created_at.isoformat()
+            elif created_at is None:
+                created_at=""
             else:
-                username_key = row[0] if len(row) > 0 else ""
-                username = row[1] if len(row) > 1 else ""
-                created_at = row[2] if len(row) > 2 else ""
-                is_active = row[3] if len(row) > 3 else True
-
-            if hasattr(created_at, "isoformat"):
-                created_at = created_at.isoformat()
-            else:
-                created_at = str(created_at or "")
-
+                created_at=str(created_at)
             safe_users.append({
-                "username_key": str(username_key or ""),
-                "username": str(username or ""),
-                "created_at": created_at,
-                "is_active": bool(is_active)
+                "username_key":str(u.get("username_key") or ""),
+                "username":str(u.get("username") or ""),
+                "created_at":created_at,
+                "is_active":bool(u.get("is_active",True))
             })
 
-        if hasattr(session_row, "get"):
-            active_sessions = int(session_row.get("count", 0) or 0)
-        elif session_row:
-            active_sessions = int(session_row[0] or 0)
-        else:
-            active_sessions = 0
+        active_users=sum(1 for u in safe_users if u["is_active"])
+        active_sessions=int((active_sessions_row or {}).get("count",0) or 0)
 
         return JSONResponse({
-            "ok": True,
-            "total_users": len(safe_users),
-            "active_users": sum(1 for u in safe_users if u["is_active"]),
-            "active_sessions": active_sessions,
-            "users": safe_users
+            "ok":True,
+            "total_users":len(safe_users),
+            "active_users":active_users,
+            "active_sessions":active_sessions,
+            "users":safe_users
         })
-
     except Exception as error:
-        print("ADMIN USERS ERROR:", repr(error))
+        print("ADMIN USERS ERROR:",repr(error))
         return JSONResponse({
-            "ok": False,
-            "message": "Could not load user management data.",
-            "error_type": type(error).__name__,
-            "error": str(error)[:500]
-        }, status_code=500)
+            "ok":False,
+            "message":"Could not load user management data.",
+            "error_type":type(error).__name__
+        },status_code=500)
 
 
 class AdminUserStatusRequest(BaseModel):
