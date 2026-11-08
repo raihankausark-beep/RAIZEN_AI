@@ -24,6 +24,9 @@ from psycopg.rows import dict_row
 from pypdf import PdfReader
 from docx import Document
 
+DEFAULT_BASE_URL = "https://raizen-ai.onrender.com"
+APP_BASE_URL = (os.getenv("APP_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
+
 app = FastAPI()
 app.add_middleware(
     SessionMiddleware,
@@ -33,7 +36,7 @@ app.add_middleware(
 )
 oauth = OAuth()
 @app.get("/login")
-async def login(request: Request):
+async def auth0_login(request: Request):
     redirect_uri = request.url_for("auth_callback")
     return await oauth.auth0.authorize_redirect(request, redirect_uri)
 
@@ -55,10 +58,10 @@ async def auth_callback(request: Request):
 
 @app.get("/sitemap.xml")
 async def sitemap():
-    xml = """<?xml version="1.0" encoding="UTF-8"?>
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
-        <loc>https://raizen-ai.onrender.com/</loc>
+        <loc>{APP_BASE_URL}/</loc>
     </url>
 </urlset>"""
 
@@ -71,17 +74,17 @@ async def sitemap():
 @app.get("/robots.txt")
 async def robots():
     return Response(
-        content="""User-agent: *
+        content=f"""User-agent: *
 Allow: /
 
-Sitemap: https://raizen-ai.onrender.com/sitemap.xml
+Sitemap: {APP_BASE_URL}/sitemap.xml
 """,
         media_type="text/plain"
     )
 
 
 @app.get("/logout")
-async def logout(request: Request):
+async def auth0_logout(request: Request):
     request.session.clear()
 
     domain = os.getenv("AUTH0_DOMAIN")
@@ -89,7 +92,7 @@ async def logout(request: Request):
 
     params = urlencode({
         "client_id": client_id,
-        "returnTo": "https://raizen-ai.onrender.com"
+        "returnTo": APP_BASE_URL
     })
 
     return RedirectResponse(
@@ -114,10 +117,22 @@ async def auth_user(request: Request):
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT username FROM raizen_users WHERE username_key = %s",
+                    """SELECT u.username,
+                              COALESCE(c.is_active, TRUE) AS is_active
+                       FROM raizen_users u
+                       LEFT JOIN raizen_user_controls c
+                         ON c.username_key = u.username_key
+                       WHERE u.username_key = %s""",
                     (username,)
                 )
                 existing = cur.fetchone()
+
+                if existing and not existing.get("is_active", True):
+                    return {
+                        "ok": False,
+                        "user": None,
+                        "message": "Your account has been deactivated."
+                    }
 
                 if not existing:
                     salt, password_hash = hash_password(
@@ -327,8 +342,11 @@ def get_authenticated_username(token):
                     FROM raizen_sessions s
                     JOIN raizen_users u
                       ON u.username_key = s.username_key
+                    LEFT JOIN raizen_user_controls c
+                      ON c.username_key = u.username_key
                     WHERE s.token_hash = %s
                       AND s.expires_at > NOW()
+                      AND COALESCE(c.is_active, TRUE) = TRUE
                     """,
                     (hash_token(token),)
                 )
@@ -1190,6 +1208,22 @@ let authMode = "login";
 function showAuthMode(mode){ return false; }
 function submitAuth(event){ if(event) event.preventDefault(); return false; }
 
+function beginAsyncOperation(type, thinkingEl) {
+    const controller = new AbortController();
+    activeChatController = controller;
+    activeThinkingMessage = thinkingEl;
+    activeRequestType = type;
+    document.getElementById("stopButton").classList.add("active");
+    return controller;
+}
+
+function finishAsyncOperation() {
+    activeChatController = null;
+    activeThinkingMessage = null;
+    activeRequestType = "";
+    document.getElementById("stopButton").classList.remove("active");
+}
+
 async function checkLogin(){
     try {
         const response = await fetch("/auth/user");
@@ -1390,7 +1424,7 @@ function clearVision() {
     }
 }
 
-async function sendVisionMessage(question) {
+async function sendVisionMessage(question, signal) {
     const formData = new FormData();
     formData.append("file", visionFile);
     formData.append("question", question);
@@ -1398,7 +1432,8 @@ async function sendVisionMessage(question) {
 
     const response = await fetch("/vision", {
         method: "POST",
-        body: formData
+        body: formData,
+        signal: signal
     });
 
     const data = await response.json();
@@ -1577,8 +1612,11 @@ function usePrompt(text) {
 function looksLikeImageRequest(text) {
     const value = (text || "").toLowerCase().trim();
 
-    // A single prompt box: image nouns alone can be enough.
-    // Examples: "a school image", "image of a dog", "applied mathematics poster".
+    // Bare creation commands alone should remain normal chat so RAIZEN can ask what to generate.
+    if (!value || /^(generate|create|make|draw|bana|banao|bana\s*de|bana\s*do)$/i.test(value)) {
+        return false;
+    }
+
     const visualWords = [
         "image", "picture", "photo", "poster", "logo", "wallpaper",
         "illustration", "artwork", "banner", "thumbnail", "portrait",
@@ -1588,7 +1626,8 @@ function looksLikeImageRequest(text) {
 
     const imageVerbs = [
         "create", "generate", "make", "draw", "design",
-        "render", "illustrate", "paint", "show"
+        "render", "illustrate", "paint", "show",
+        "bana", "banao", "bana de", "bana do"
     ];
 
     const hasVisualWord = visualWords.some(word =>
@@ -1604,8 +1643,8 @@ function looksLikeImageRequest(text) {
         /\bpicture\s+of\b/i,
         /\bphoto\s+of\b/i,
         /\bposter\s+of\b/i,
-        /\blogo\s+for\b/i,
-        /\bwallpaper\s+of\b/i,
+        /\blogo\s+(for|of)\b/i,
+        /\bwallpaper\s+(of|for)\b/i,
         /\bportrait\s+of\b/i,
         /\bdiagram\s+of\b/i
     ];
@@ -1624,15 +1663,35 @@ function looksLikeImageRequest(text) {
         "create a picture"
     ];
 
-    // "generate" alone should remain normal chat so RAIZEN can ask what to generate.
-    if (!value || value === "generate" || value === "create" || value === "make") {
+    const hindiImagePatterns = [
+        /\b(wallpaper|poster|image|photo|picture|drawing|logo)\s+(bana\s*de|bana\s*do|banao|banaye|bana)\b/i,
+        /\b(bana\s*de|bana\s*do|banao|banaye|bana)\s+.*(wallpaper|poster|image|photo|picture|drawing|logo)\b/i,
+        /\b(ek\s+)?(wallpaper|poster|image|photo|picture|drawing|logo)\s+bana\b/i
+    ];
+
+    // Exclude questions that are clearly conversational inquiries even if they contain visual words
+    const conversationalPatterns = [
+        /\b(explain|describe|what is|what's|what are|who is|tell me about|how does|how do|define)\b/i,
+        /\b(samjhao|samjha|kya hai|kaun hai|bata|batao)\b/i
+    ];
+    if (conversationalPatterns.some(p => p.test(value)) && !directImagePhrases.some(phrase => value.includes(phrase))) {
+        return false;
+    }
+
+    // Exclude edit instructions on an existing image
+    const editInstructionPatterns = [
+        /\b(this|the|uploaded)\s+(image|picture|photo|diagram)\b/i,
+        /\b(remove|replace|crop|blur|sharpen|darker|lighter|brighter)\b/i,
+        /\b(background\s*hata|background\s*change|clear\s*kar|thoda\s*clear)\b/i
+    ];
+    if (editInstructionPatterns.some(p => p.test(value)) && !directImagePhrases.some(phrase => value.includes(phrase))) {
         return false;
     }
 
     return directImagePhrases.some(phrase => value.includes(phrase))
         || imageObjectPatterns.some(pattern => pattern.test(value))
-        || (hasVisualWord && hasImageVerb)
-        || (hasVisualWord && value.split(/\s+/).length <= 8);
+        || hindiImagePatterns.some(pattern => pattern.test(value))
+        || (hasVisualWord && hasImageVerb);
 }
 
 
@@ -1649,6 +1708,8 @@ async function generateImageFromPrompt(prompt) {
         "thinking"
     );
 
+    const controller = beginAsyncOperation("image-gen", thinking);
+
     try {
         const response = await fetch("/generate-image", {
             method: "POST",
@@ -1656,7 +1717,8 @@ async function generateImageFromPrompt(prompt) {
             body: JSON.stringify({
                 token: authToken,
                 prompt: prompt
-            })
+            }),
+            signal: controller.signal
         });
 
         const data = await response.json();
@@ -1680,6 +1742,27 @@ async function generateImageFromPrompt(prompt) {
     } catch (error) {
         if (thinking) thinking.remove();
 
+        const wasStopped = error && error.name === "AbortError" && !document.getElementById("stopButton").classList.contains("active");
+        if (wasStopped) {
+            chatHistory.push({role: "user", content: prompt});
+            chatHistory.push({role: "assistant", content: "⏹️ Generation stopped."});
+            saveCurrentChat();
+            button.disabled = false;
+            document.getElementById("messageInput").focus();
+            return;
+        }
+
+        if (error && error.name === "AbortError") {
+            finishAsyncOperation();
+            displayMessage("assistant", "⏹️ Generation stopped (request aborted in browser).");
+            chatHistory.push({role: "user", content: prompt});
+            chatHistory.push({role: "assistant", content: "⏹️ Generation stopped."});
+            saveCurrentChat();
+            button.disabled = false;
+            document.getElementById("messageInput").focus();
+            return;
+        }
+
         const msg = "⚠️ Image generation failed. Please try again.";
         displayMessage("assistant", msg);
         chatHistory.push({role: "user", content: prompt});
@@ -1687,6 +1770,7 @@ async function generateImageFromPrompt(prompt) {
         saveCurrentChat();
     }
 
+    finishAsyncOperation();
     button.disabled = false;
     document.getElementById("messageInput").focus();
 }
@@ -1774,22 +1858,24 @@ function looksLikeImageEditRequest(text) {
     if (!value) return false;
 
     const analysisPatterns = [
-        /\\b(what is|what's|describe|analyze|analyse|read|extract|identify|who is|what does)\\b/i,
-        /\\b(kya hai|kya dikh raha|kaun hai|padh ke bata|samjha|analyze kar)\\b/i
+        /\b(what is|what's|describe|analyze|analyse|read|extract|identify|who is|what does)\b/i,
+        /\b(kya hai|kya dikh raha|kaun hai|padh ke bata|samjha|analyze kar)\b/i
     ];
     if (analysisPatterns.some(pattern => pattern.test(value))) return false;
 
-    const editWords = [
-        "edit", "change", "modify", "remove", "add", "replace", "fix",
-        "enhance", "improve", "clear", "sharpen", "restore", "retouch",
-        "background", "blur", "crop", "resize", "color", "colour",
-        "brightness", "lighting", "hd", "quality", "make it", "turn it",
-        "bana de", "bana do", "change kar", "remove kar", "add kar",
-        "background hata", "background change", "clear kar", "enhance kar",
-        "quality badha", "saaf kar", "thoda clear", "blur kar"
+    const editPatterns = [
+        /\b(edit|modify|retouch|sharpen|restore|enhance|crop|resize)\b/i,
+        /\b(remove|replace|add|fix|improve|clear)\s+(the |this |that |a |an )?/i,
+        /\b(change|make|turn)\s+(the |this |it |that )?(image |picture |photo )?(background|color|colour|brightness|lighting|quality|black and white|grayscale|darker|lighter|brighter)/i,
+        /\bmake\s+it\b/i,
+        /\bturn\s+it\b/i,
+        /\b(blur|hd|upscale|black and white|grayscale)\b/i,
+        /\b(change\s*kar|remove\s*kar|add\s*kar)\b/i,
+        /\b(background\s*hata|background\s*change|clear\s*kar|enhance\s*kar)\b/i,
+        /\b(quality\s*badha|saaf\s*kar|thoda\s*clear|blur\s*kar)\b/i
     ];
 
-    return editWords.some(word => value.includes(word));
+    return editPatterns.some(pattern => pattern.test(value));
 }
 
 async function editUploadedImage(prompt) {
@@ -1802,6 +1888,8 @@ async function editUploadedImage(prompt) {
         "thinking"
     );
 
+    const controller = beginAsyncOperation("image-edit", thinking);
+
     try {
         const formData = new FormData();
         formData.append("file", visionFile);
@@ -1810,7 +1898,8 @@ async function editUploadedImage(prompt) {
 
         const response = await fetch("/edit-image", {
             method: "POST",
-            body: formData
+            body: formData,
+            signal: controller.signal
         });
 
         const data = await response.json();
@@ -1827,10 +1916,22 @@ async function editUploadedImage(prompt) {
         }
 
         saveCurrentChat();
+        finishAsyncOperation();
         return true;
     } catch (error) {
         if (thinking) thinking.remove();
+        const wasStopped = error && error.name === "AbortError" && !document.getElementById("stopButton").classList.contains("active");
+        if (wasStopped) {
+            finishAsyncOperation();
+            return true;
+        }
+        if (error && error.name === "AbortError") {
+            finishAsyncOperation();
+            displayMessage("assistant", "⏹️ Generation stopped (request aborted in browser).");
+            return true;
+        }
         displayMessage("assistant", "⚠️ Image editing failed. Please try again.");
+        finishAsyncOperation();
         return true;
     }
 }
@@ -1889,17 +1990,38 @@ window.sendMessage = async function sendMessage() {
 
     try {
         if (visionFile) {
-            const reply = await sendVisionMessage(message);
+            const visionCtrl = beginAsyncOperation("vision", thinking);
 
-            if (thinking) thinking.remove();
-            displayMessage("assistant", reply);
+            try {
+                const reply = await sendVisionMessage(message, visionCtrl.signal);
 
-            chatHistory.push({
-                role: "assistant",
-                content: reply
-            });
+                if (thinking) thinking.remove();
+                displayMessage("assistant", reply);
 
-            saveCurrentChat();
+                chatHistory.push({
+                    role: "assistant",
+                    content: reply
+                });
+
+                saveCurrentChat();
+            } catch (visionError) {
+                if (thinking) thinking.remove();
+                const wasStopped = visionError && visionError.name === "AbortError" && !document.getElementById("stopButton").classList.contains("active");
+                if (wasStopped) {
+                    finishAsyncOperation();
+                    button.disabled = false;
+                    input.focus();
+                    return;
+                }
+                if (visionError && visionError.name === "AbortError") {
+                    displayMessage("assistant", "⏹️ Generation stopped (request aborted in browser).");
+                } else {
+                    displayMessage("assistant", "⚠️ Vision analysis failed: " + (visionError.message || "Please try again."));
+                    chatHistory.push({ role: "assistant", content: "⚠️ Vision analysis failed." });
+                }
+            }
+
+            finishAsyncOperation();
             button.disabled = false;
             input.focus();
             return;
@@ -2075,14 +2197,11 @@ function stopGeneration() {
         activeThinkingMessage.remove();
     }
 
-    activeChatController = null;
-    activeThinkingMessage = null;
-    activeRequestType = "";
-    stopButton.classList.remove("active");
+    finishAsyncOperation();
     const sendButton = document.getElementById("sendButton");
     sendButton.disabled = false;
     document.getElementById("messageInput").focus();
-    displayMessage("assistant", "⏹️ Generation stopped.");
+    displayMessage("assistant", "⏹️ Generation stopped (request aborted in browser).");
 }
 
 async function regenerateLastResponse() {
@@ -2211,19 +2330,27 @@ async def register(request: AuthRequest):
 
 
 @app.post("/login")
-async def login(request: AuthRequest):
+async def account_login(request: AuthRequest):
     username = request.username.strip()
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT username, salt, password_hash FROM raizen_users WHERE username_key = %s",
+                    """SELECT u.username, u.salt, u.password_hash,
+                              COALESCE(c.is_active, TRUE) AS is_active
+                       FROM raizen_users u
+                       LEFT JOIN raizen_user_controls c
+                         ON c.username_key = u.username_key
+                       WHERE u.username_key = %s""",
                     (username.lower(),)
                 )
                 user = cur.fetchone()
 
         if not user or not verify_password(request.password, user["salt"], user["password_hash"]):
             return {"ok": False, "message": "Invalid username or password."}
+
+        if not user.get("is_active", True):
+            return {"ok": False, "message": "Your account has been deactivated."}
 
         token = create_auth_token(user["username"])
         return {"ok": True, "message": "Login successful.", "username": user["username"], "token": token}
@@ -2233,7 +2360,7 @@ async def login(request: AuthRequest):
 
 
 @app.post("/logout")
-async def logout(token: str = ""):
+async def account_logout(token: str = ""):
     if token:
         try:
             with get_db_connection() as conn:
@@ -2245,11 +2372,30 @@ async def logout(token: str = ""):
     return {"ok": True}
 
 
+def is_admin_request(request: Request) -> bool:
+    """Check whether the current request comes from the configured admin."""
+    try:
+        if not ADMIN_EMAIL:
+            return False
+        user = request.session.get("user") or {}
+        email = (user.get("email") or "").strip().lower()
+        return bool(email and email == ADMIN_EMAIL)
+    except Exception as error:
+        print("ADMIN AUTH CHECK ERROR:", error)
+        return False
+
+
+def admin_denied():
+    """Return a JSON 403 response for unauthorised admin API calls."""
+    return JSONResponse(
+        {"ok": False, "message": "Admin access denied."},
+        status_code=403
+    )
+
+
 @app.get("/admin/check")
 async def admin_check(request: Request):
-    user = request.session.get("user") or {}
-    email = (user.get("email") or "").strip().lower()
-    return {"is_admin": bool(ADMIN_EMAIL and email and email == ADMIN_EMAIL)}
+    return {"is_admin": is_admin_request(request)}
 
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -2931,11 +3077,15 @@ class ImageEditRequest(BaseModel):
 
 
 @app.post("/edit-image")
-async def edit_image(request: ImageEditRequest, file: UploadFile = File(...)):
-    if not get_authenticated_username(request.token):
+async def edit_image(
+    file: UploadFile = File(...),
+    prompt: str = Form(...),
+    token: str = Form("")
+):
+    if not get_authenticated_username(token):
         return {"error": "Please log in to edit images."}
 
-    prompt = request.prompt.strip()
+    prompt = prompt.strip()
     if not prompt:
         return {"error": "Please describe how you want to edit the image."}
     if len(prompt) > 1500:
