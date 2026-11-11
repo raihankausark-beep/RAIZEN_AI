@@ -3,6 +3,7 @@ import json
 import re
 import base64
 import hashlib
+import hmac
 import secrets
 import time
 from fastapi.responses import RedirectResponse, Response
@@ -107,68 +108,79 @@ async def auth_user(request: Request):
     if not user:
         return {
             "ok": False,
-            "user": None
+            "user": None,
+            "message": "Not authenticated."
         }
 
     email = user.get("email") or user.get("sub") or "auth0_user"
     username = email.strip().lower()
 
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """SELECT u.username,
-                              COALESCE(c.is_active, TRUE) AS is_active
-                       FROM raizen_users u
-                       LEFT JOIN raizen_user_controls c
-                         ON c.username_key = u.username_key
-                       WHERE u.username_key = %s""",
-                    (username,)
-                )
-                existing = cur.fetchone()
-
-                if existing and not existing.get("is_active", True):
-                    return {
-                        "ok": False,
-                        "user": None,
-                        "message": "Your account has been deactivated."
-                    }
-
-                if not existing:
-                    salt, password_hash = hash_password(
-                        secrets.token_urlsafe(32)
-                    )
-
+    # Step 1: Attempt database persistence if database is available
+    if not is_db_circuit_open():
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
                     cur.execute(
-                        """INSERT INTO raizen_users
-                           (username_key, username, salt, password_hash, created_at)
-                           VALUES (%s, %s, %s, %s, %s)""",
-                        (
-                            username,
-                            username,
-                            salt,
-                            password_hash,
-                            datetime.now(timezone.utc)
-                        )
+                        """SELECT u.username,
+                                  COALESCE(c.is_active, TRUE) AS is_active
+                           FROM raizen_users u
+                           LEFT JOIN raizen_user_controls c
+                             ON c.username_key = u.username_key
+                           WHERE u.username_key = %s""",
+                        (username,)
                     )
+                    existing = cur.fetchone()
 
-            conn.commit()
+                    if existing and not existing.get("is_active", True):
+                        return {
+                            "ok": False,
+                            "user": None,
+                            "message": "Your account has been deactivated."
+                        }
 
-        session_token = create_auth_token(username)
+                    if not existing:
+                        salt, password_hash = hash_password(
+                            secrets.token_urlsafe(32)
+                        )
 
-        return {
-            "ok": True,
-            "user": user,
-            "token": session_token,
-            "username": username
-        }
+                        cur.execute(
+                            """INSERT INTO raizen_users
+                               (username_key, username, salt, password_hash, created_at)
+                               VALUES (%s, %s, %s, %s, %s)""",
+                            (
+                                username,
+                                username,
+                                salt,
+                                password_hash,
+                                datetime.now(timezone.utc)
+                            )
+                        )
 
-    except Exception as error:
-        print("AUTH0 USER ERROR:", error)
-        return {
-            "ok": False,
-            "user": None
-        }
+                conn.commit()
+
+            session_token = create_auth_token(username)
+
+            return {
+                "ok": True,
+                "user": user,
+                "token": session_token,
+                "username": username,
+                "db_connected": True
+            }
+
+        except Exception as error:
+            print("AUTH0 DB PERSISTENCE NOTICE:", repr(error))
+
+    # Step 2: Fallback when database is unavailable:
+    # Use cryptographically signed fallback token bound strictly to the verified Auth0 session user
+    fallback_token = create_fallback_token(username)
+    return {
+        "ok": True,
+        "user": user,
+        "token": fallback_token,
+        "username": username,
+        "db_connected": False
+    }
 oauth.register(
     name="auth0",
     client_id=os.getenv("AUTH0_CLIENT_ID"),
@@ -213,10 +225,39 @@ class AuthRequest(BaseModel):
     password: str
 
 
+_DB_CIRCUIT_OPEN_UNTIL = 0.0
+_DB_CIRCUIT_COOLDOWN_SECONDS = 15.0
+_DB_CONNECT_TIMEOUT = 3
+
+
+def is_db_circuit_open() -> bool:
+    global _DB_CIRCUIT_OPEN_UNTIL
+    return time.time() < _DB_CIRCUIT_OPEN_UNTIL
+
+
+def record_db_failure(error: Exception):
+    global _DB_CIRCUIT_OPEN_UNTIL
+    _DB_CIRCUIT_OPEN_UNTIL = time.time() + _DB_CIRCUIT_COOLDOWN_SECONDS
+    print(f"DATABASE NOTICE: Connection unavailable ({type(error).__name__}). Circuit open for {_DB_CIRCUIT_COOLDOWN_SECONDS}s.")
+
+
+def record_db_success():
+    global _DB_CIRCUIT_OPEN_UNTIL
+    _DB_CIRCUIT_OPEN_UNTIL = 0.0
+
+
 def get_db_connection():
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not configured on the server.")
-    return psycopg.connect(DATABASE_URL, row_factory=dict_row, connect_timeout=10)
+    if is_db_circuit_open():
+        raise RuntimeError(f"Database circuit is open. Retry in {int(_DB_CIRCUIT_OPEN_UNTIL - time.time())}s.")
+    try:
+        conn = psycopg.connect(DATABASE_URL, row_factory=dict_row, connect_timeout=_DB_CONNECT_TIMEOUT)
+        record_db_success()
+        return conn
+    except Exception as error:
+        record_db_failure(error)
+        raise
 
 
 def init_database():
@@ -307,6 +348,51 @@ def verify_password(password, salt, expected_hash):
     return secrets.compare_digest(digest, expected_hash)
 
 
+_SERVER_RUNTIME_SECRET = secrets.token_bytes(32)
+FALLBACK_TOKEN_PREFIX = "fb."
+
+
+def get_signing_secret() -> bytes:
+    key = os.getenv("AUTH0_SESSION_SECRET") or os.getenv("AUTH0_CLIENT_SECRET")
+    return key.encode("utf-8") if key else _SERVER_RUNTIME_SECRET
+
+
+def create_fallback_token(username: str) -> str:
+    """Generate a cryptographically signed, tamper-proof fallback token bound to username."""
+    secret = get_signing_secret()
+    expires_at = int(time.time()) + AUTH_TOKEN_TTL
+    clean_username = username.strip().lower()
+    payload = f"{clean_username}:{expires_at}"
+    sig = hmac.new(secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    user_b64 = base64.urlsafe_b64encode(clean_username.encode("utf-8")).decode("utf-8").rstrip("=")
+    return f"{FALLBACK_TOKEN_PREFIX}{user_b64}.{expires_at}.{sig}"
+
+
+def verify_fallback_token(token: str) -> str:
+    """Verify cryptographic signature and expiration of fallback token. Returns verified username or empty string."""
+    if not token or not token.startswith(FALLBACK_TOKEN_PREFIX):
+        return ""
+    try:
+        raw = token[len(FALLBACK_TOKEN_PREFIX):]
+        parts = raw.split(".")
+        if len(parts) != 3:
+            return ""
+        user_b64, expires_str, expected_sig = parts
+        padding = (4 - len(user_b64) % 4) % 4
+        username = base64.urlsafe_b64decode(user_b64 + "=" * padding).decode("utf-8").strip().lower()
+        expires_at = int(expires_str)
+        if time.time() > expires_at:
+            return ""
+        secret = get_signing_secret()
+        payload = f"{username}:{expires_at}"
+        actual_sig = hmac.new(secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not secrets.compare_digest(actual_sig, expected_sig):
+            return ""
+        return username
+    except Exception:
+        return ""
+
+
 def hash_token(token):
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
@@ -333,31 +419,58 @@ def get_authenticated_username(token):
     if not token:
         return ""
 
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT u.username
-                    FROM raizen_sessions s
-                    JOIN raizen_users u
-                      ON u.username_key = s.username_key
-                    LEFT JOIN raizen_user_controls c
-                      ON c.username_key = u.username_key
-                    WHERE s.token_hash = %s
-                      AND s.expires_at > NOW()
-                      AND COALESCE(c.is_active, TRUE) = TRUE
-                    """,
-                    (hash_token(token),)
-                )
+    # Case 1: Cryptographically signed fallback token
+    if token.startswith(FALLBACK_TOKEN_PREFIX):
+        verified_username = verify_fallback_token(token)
+        if not verified_username:
+            return ""
+        # If database is reachable, actively enforce deactivation
+        if not is_db_circuit_open():
+            try:
+                with get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """SELECT COALESCE(is_active, TRUE) AS is_active
+                               FROM raizen_user_controls
+                               WHERE username_key = %s""",
+                            (verified_username.lower(),)
+                        )
+                        control = cur.fetchone()
+                        if control and not control.get("is_active", True):
+                            return ""
+            except Exception as db_err:
+                pass
+        return verified_username
 
-                row = cur.fetchone()
+    # Case 2: Database-backed session token
+    if not is_db_circuit_open():
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT u.username
+                        FROM raizen_sessions s
+                        JOIN raizen_users u
+                          ON u.username_key = s.username_key
+                        LEFT JOIN raizen_user_controls c
+                          ON c.username_key = u.username_key
+                        WHERE s.token_hash = %s
+                          AND s.expires_at > NOW()
+                          AND COALESCE(c.is_active, TRUE) = TRUE
+                        """,
+                        (hash_token(token),)
+                    )
 
-        return row["username"] if row else ""
+                    row = cur.fetchone()
 
-    except Exception as error:
-        print("AUTH CHECK ERROR:", error)
-        return ""
+            return row["username"] if row else ""
+
+        except Exception as error:
+            print("AUTH CHECK ERROR:", repr(error))
+            return ""
+
+    return ""
 
 
 class ChatRequest(BaseModel):
@@ -1225,11 +1338,16 @@ function finishAsyncOperation() {
 }
 
 async function checkLogin(){
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+
     try {
-        const response = await fetch("/auth/user");
+        const response = await fetch("/auth/user", { signal: controller.signal });
+        clearTimeout(timeoutId);
         const data = await response.json();
 
         if (data.ok && data.user) {
+            sessionStorage.removeItem("raizen_login_redirects");
             authToken = data.token || "";
 
             loggedInUsername =
@@ -1253,27 +1371,63 @@ async function checkLogin(){
             if (menuAvatar) menuAvatar.src = avatar;
             if (accountName) accountName.textContent = data.user.name || loggedInUsername;
             if (menuName) menuName.textContent = data.user.name || "User";
-            if (menuEmail) menuEmail.textContent = data.user.email || loggedInUsername;
+            if (menuEmail) {
+                menuEmail.textContent = data.db_connected === false
+                    ? (data.user.email || loggedInUsername) + " (Database Offline)"
+                    : (data.user.email || loggedInUsername);
+            }
 
             try {
-                const adminResponse = await fetch("/admin/check");
+                const adminCtrl = new AbortController();
+                const adminTimeout = setTimeout(() => adminCtrl.abort(), 4000);
+                const adminResponse = await fetch("/admin/check", { signal: adminCtrl.signal });
+                clearTimeout(adminTimeout);
                 const adminData = await adminResponse.json();
                 const adminButton = document.getElementById("adminMenuButton");
                 if (adminButton) {
                     adminButton.style.display = adminData.is_admin ? "block" : "none";
                 }
             } catch (adminError) {
-                console.warn("ADMIN CHECK ERROR:", adminError);
+                console.warn("ADMIN CHECK NOTICE:", adminError);
             }
 
             showAppAfterLogin();
         } else {
-            window.location.href = "/login";
+            handleUnauthenticated(data ? data.message : "");
         }
     } catch (error) {
-        console.error("AUTH CHECK ERROR:", error);
-        window.location.href = "/login";
+        clearTimeout(timeoutId);
+        console.warn("AUTH CHECK NOTICE:", error);
+        handleUnauthenticated("Authentication check timed out or failed.");
     }
+}
+
+function handleUnauthenticated(message) {
+    const redirects = parseInt(sessionStorage.getItem("raizen_login_redirects") || "0", 10);
+    const menuEmail = document.getElementById("menuEmail");
+    const menuName = document.getElementById("menuName");
+    const accountName = document.getElementById("accountName");
+
+    if (redirects < 1) {
+        sessionStorage.setItem("raizen_login_redirects", String(redirects + 1));
+        window.location.href = "/login";
+        return;
+    }
+
+    // Break infinite redirect loop and present clean state
+    if (menuEmail) menuEmail.textContent = message || "Please sign in";
+    if (menuName) menuName.textContent = "Guest";
+    if (accountName) accountName.textContent = "Sign in";
+
+    const accountPill = document.getElementById("accountPill");
+    if (accountPill) {
+        accountPill.onclick = function() {
+            sessionStorage.removeItem("raizen_login_redirects");
+            window.location.href = "/login";
+        };
+    }
+
+    showAppDirect();
 }
 
 function toggleAccountMenu(){
@@ -3124,7 +3278,7 @@ async def edit_image(
 @app.get("/health")
 async def health():
     database_ok = False
-    if DATABASE_URL:
+    if DATABASE_URL and not is_db_circuit_open():
         try:
             with get_db_connection() as conn:
                 with conn.cursor() as cur:
