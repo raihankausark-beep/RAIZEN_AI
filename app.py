@@ -193,8 +193,12 @@ oauth.register(
     },
 )
 
-HF_TOKEN = os.getenv("HF_TOKEN")
-MODEL = "zai-org/GLM-5.3-Flash"
+HF_TOKEN = (os.getenv("HF_TOKEN") or "").strip().strip('"').strip("'") or None
+MODEL = (os.getenv("MODEL") or "zai-org/GLM-5.3-Flash").strip()
+FALLBACK_CHAT_MODELS = [
+    "Qwen/Qwen2.5-72B-Instruct",
+    "meta-llama/Llama-3.1-8B-Instruct"
+]
 
 MAX_CHAT_OUTPUT_TOKENS = 2000
 MAX_HISTORY_MESSAGES = 30
@@ -553,27 +557,36 @@ def build_document_context(text, question=""):
 
 def chat_completion_with_retry(messages, max_tokens):
     last_error = None
-    for attempt in range(3):
-        try:
-            return client.chat.completions.create(
-                model=MODEL,
-                messages=messages,
-                max_tokens=max_tokens
-            )
-        except Exception as error:
-            last_error = error
-            if attempt < 2:
-                time.sleep(1.2 * (attempt + 1))
+    models_to_try = [MODEL] + [m for m in FALLBACK_CHAT_MODELS if m != MODEL]
+    for model_name in models_to_try:
+        for attempt in range(2):
+            try:
+                return client.chat.completions.create(
+                    model=model_name,
+                    messages=messages,
+                    max_tokens=max_tokens
+                )
+            except Exception as error:
+                last_error = error
+                print(f"RAIZEN CHAT NOTICE ({model_name} attempt {attempt+1}/2): {type(error).__name__} - {error}", flush=True)
+                time.sleep(0.5 * (attempt + 1))
     raise last_error
 
 
 def chat_completion_stream(messages, max_tokens):
-    return client.chat.completions.create(
-        model=MODEL,
-        messages=messages,
-        max_tokens=max_tokens,
-        stream=True
-    )
+    models_to_try = [MODEL] + [m for m in FALLBACK_CHAT_MODELS if m != MODEL]
+    last_error = None
+    for model_name in models_to_try:
+        try:
+            return client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                max_tokens=max_tokens,
+                stream=True
+            )
+        except Exception as error:
+            last_error = error
+    raise last_error
 
 
 def needs_live_search(message):
@@ -2221,12 +2234,13 @@ window.sendMessage = async function sendMessage() {
         }
 
         const contentType = response.headers.get("content-type") || "";
+        let streamedMessage = null;
         let reply = "";
 
         if (contentType.includes("text/event-stream")) {
             if (thinking) thinking.remove();
 
-            const streamedMessage = displayMessage("assistant", "");
+            streamedMessage = displayMessage("assistant", "");
             let buffer = "";
             let streamDone = false;
             const reader = response.body.getReader();
@@ -2250,19 +2264,19 @@ window.sendMessage = async function sendMessage() {
                         break;
                     }
 
+                    let parsed;
                     try {
-                        const parsed = JSON.parse(payload);
-                        if (parsed.error) {
-                            throw new Error(parsed.error);
-                        }
-                        if (parsed.token) {
-                            reply += parsed.token;
-                            updateMessage(streamedMessage, reply);
-                        }
-                    } catch (parseError) {
-                        if (parseError.message && parseError.message.startsWith("⚠️")) {
-                            throw parseError;
-                        }
+                        parsed = JSON.parse(payload);
+                    } catch (e) {
+                        continue;
+                    }
+
+                    if (parsed.error) {
+                        throw new Error(parsed.error);
+                    }
+                    if (parsed.token) {
+                        reply += parsed.token;
+                        updateMessage(streamedMessage, reply);
                     }
                 }
             }
@@ -2308,6 +2322,9 @@ window.sendMessage = async function sendMessage() {
 
         const wasStopped = error && error.name === "AbortError" && activeRequestType === "chat" && !document.getElementById("stopButton").classList.contains("active");
         if (wasStopped) {
+            if (streamedMessage && !reply) {
+                streamedMessage.remove();
+            }
             activeChatController = null;
             activeThinkingMessage = null;
             activeRequestType = "";
@@ -2317,15 +2334,41 @@ window.sendMessage = async function sendMessage() {
             return;
         }
 
-        const reply = error && error.name === "AbortError"
+        const errorMessage = error && error.name === "AbortError"
             ? "⚠️ RAIZEN took too long to respond. Please try again."
-            : "⚠️ RAIZEN could not reach the AI service. Please try again.";
+            : (error && error.message && error.message.startsWith("⚠️")
+                ? error.message
+                : "⚠️ RAIZEN could not reach the AI service. Please try again.");
 
-        displayMessage("assistant", reply);
+        let finalAssistantMessage;
+        if (streamedMessage && !reply) {
+            streamedMessage.remove();
+            finalAssistantMessage = displayMessage("assistant", errorMessage);
+        } else if (streamedMessage && reply) {
+            reply += "\n\n[" + errorMessage + "]";
+            updateMessage(streamedMessage, reply);
+            finalAssistantMessage = streamedMessage;
+        } else {
+            finalAssistantMessage = displayMessage("assistant", errorMessage);
+        }
+
+        lastNormalAssistantMessage = finalAssistantMessage;
+
+        const actions = document.createElement("div");
+        actions.className = "message-actions";
+        const regen = document.createElement("button");
+        regen.className = "message-action-btn";
+        regen.type = "button";
+        regen.textContent = "↻ Regenerate";
+        regen.onclick = function() { regenerateLastResponse(); };
+        actions.appendChild(regen);
+        if (lastNormalAssistantMessage) {
+            lastNormalAssistantMessage.appendChild(actions);
+        }
 
         chatHistory.push({
             role: "assistant",
-            content: reply
+            content: (streamedMessage && reply) ? reply : errorMessage
         });
 
         saveCurrentChat();
@@ -3122,29 +3165,74 @@ Uploaded document:
 
     if request.stream:
         def event_stream():
-            try:
-                stream = chat_completion_stream(
-                    messages,
-                    MAX_CHAT_OUTPUT_TOKENS
-                )
+            stream_success = False
+            last_stream_error = None
+            models_to_try = [MODEL] + [m for m in FALLBACK_CHAT_MODELS if m != MODEL]
 
-                for chunk in stream:
-                    try:
-                        choice = chunk.choices[0]
-                        delta = getattr(choice.delta, "content", None)
-                    except Exception:
+            for model_name in models_to_try:
+                tokens_yielded = False
+                try:
+                    stream = client.chat.completions.create(
+                        model=model_name,
+                        messages=messages,
+                        max_tokens=MAX_CHAT_OUTPUT_TOKENS,
+                        stream=True
+                    )
+
+                    for chunk in stream:
                         delta = None
+                        try:
+                            choice = chunk.choices[0]
+                            delta_obj = getattr(choice, "delta", None)
+                            if delta_obj:
+                                delta = getattr(delta_obj, "content", None) or getattr(delta_obj, "reasoning", None)
+                                if not delta and isinstance(delta_obj, dict):
+                                    delta = delta_obj.get("content") or delta_obj.get("reasoning")
+                        except Exception:
+                            delta = None
 
-                    if delta:
-                        yield "data: " + json.dumps({"token": delta}, ensure_ascii=False) + "\n\n"
+                        if delta:
+                            tokens_yielded = True
+                            yield "data: " + json.dumps({"token": delta}, ensure_ascii=False) + "\n\n"
 
-                yield "data: [DONE]\n\n"
+                    yield "data: [DONE]\n\n"
+                    stream_success = True
+                    break
 
-            except Exception as error:
-                print("RAIZEN STREAM ERROR:", error)
-                yield "data: " + json.dumps({
-                    "error": "⚠️ RAIZEN is temporarily unable to respond. Please try again."
-                }, ensure_ascii=False) + "\n\n"
+                except Exception as error:
+                    last_stream_error = error
+                    print(f"RAIZEN STREAM ERROR ({model_name}) [{type(error).__name__}]: {error}", flush=True)
+                    if tokens_yielded:
+                        # Tokens have already been sent to the frontend.
+                        # Failover must NOT happen now because doing so would concatenate
+                        # a second response onto the partial output.
+                        # Send a structured SSE error event and cleanly terminate the stream.
+                        yield "data: " + json.dumps({"error": "⚠️ Stream disconnected. Response may be incomplete."}, ensure_ascii=False) + "\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
+
+            if not stream_success:
+                print("RAIZEN STREAM FAILED ON ALL MODELS, ATTEMPTING NON-STREAMING FALLBACK...", flush=True)
+                try:
+                    resp = chat_completion_with_retry(messages, MAX_CHAT_OUTPUT_TOKENS)
+                    reply_text = resp.choices[0].message.content
+                    if reply_text:
+                        yield "data: " + json.dumps({"token": reply_text}, ensure_ascii=False) + "\n\n"
+                        yield "data: [DONE]\n\n"
+                        stream_success = True
+                except Exception as fallback_err:
+                    print(f"RAIZEN NON-STREAMING FALLBACK ERROR: {fallback_err}", flush=True)
+
+            if not stream_success:
+                err_msg = "⚠️ RAIZEN could not reach the AI service. Please try again."
+                err_str = str(last_stream_error or "")
+                if "401" in err_str:
+                    err_msg = "⚠️ AI authentication error. Please verify HF_TOKEN in server settings."
+                elif "402" in err_str:
+                    err_msg = "⚠️ AI service quota exceeded. Please check Hugging Face provider credits."
+                elif "429" in err_str:
+                    err_msg = "⚠️ AI service is busy (rate limit). Please wait a moment and try again."
+                yield "data: " + json.dumps({"error": err_msg}, ensure_ascii=False) + "\n\n"
                 yield "data: [DONE]\n\n"
 
         return StreamingResponse(
