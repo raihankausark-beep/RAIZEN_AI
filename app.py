@@ -10,7 +10,8 @@ from fastapi.responses import RedirectResponse, Response
 from urllib.parse import urlencode
 from datetime import datetime, timezone
 from urllib.parse import quote
-from urllib.request import Request, urlopen
+from urllib.request import Request as URLRequest, urlopen
+import urllib.error
 from io import BytesIO
 import xml.etree.ElementTree as ET
 
@@ -194,11 +195,16 @@ oauth.register(
 )
 
 HF_TOKEN = (os.getenv("HF_TOKEN") or "").strip().strip('"').strip("'") or None
-MODEL = (os.getenv("MODEL") or "zai-org/GLM-5.3-Flash").strip()
-FALLBACK_CHAT_MODELS = [
-    "Qwen/Qwen2.5-72B-Instruct",
-    "meta-llama/Llama-3.1-8B-Instruct"
-]
+
+# Google Gemini Developer API Free Tier Configuration
+GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip().strip('"').strip("'") or None
+GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or "gemini-3.8-flash").strip()
+GEMINI_FREE_FALLBACK_MODELS = ["gemini-3.5-flash-lite"]
+GEMINI_OPENAI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+
+# Primary model and free fallback aliases (Zero-cost guarantee: both are Free Tier models)
+MODEL = GEMINI_MODEL
+FALLBACK_CHAT_MODELS = GEMINI_FREE_FALLBACK_MODELS
 
 MAX_CHAT_OUTPUT_TOKENS = 2000
 MAX_HISTORY_MESSAGES = 30
@@ -555,7 +561,76 @@ def build_document_context(text, question=""):
     context = "\n\n--- DOCUMENT SECTION ---\n\n".join(chunks[i] for i in sorted(selected))
     return context[:MAX_DOCUMENT_CONTEXT_CHARS] + "\n\n[Large document: relevant sections selected automatically.]"
 
+class GeminiMessage:
+    def __init__(self, content):
+        self.content = content
+
+class GeminiChoice:
+    def __init__(self, content):
+        self.message = GeminiMessage(content)
+
+class GeminiResponse:
+    def __init__(self, content):
+        self.choices = [GeminiChoice(content)]
+
+class GeminiDelta:
+    def __init__(self, content):
+        self.content = content
+        self.reasoning = None
+
+class GeminiStreamChoice:
+    def __init__(self, content):
+        self.delta = GeminiDelta(content)
+
+class GeminiChunk:
+    def __init__(self, content):
+        self.choices = [GeminiStreamChoice(content)]
+
+
+def gemini_chat_completion(messages, max_tokens=MAX_CHAT_OUTPUT_TOKENS):
+    if not GEMINI_API_KEY:
+        raise ValueError("GEMINI_API_KEY is not configured on the server.")
+
+    models_to_try = [GEMINI_MODEL] + [m for m in GEMINI_FREE_FALLBACK_MODELS if m != GEMINI_MODEL]
+    last_error = None
+
+    for model_name in models_to_try:
+        try:
+            payload = json.dumps({
+                "model": model_name,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "stream": False,
+                "temperature": 0.7
+            }).encode("utf-8")
+
+            req = URLRequest(
+                GEMINI_OPENAI_URL,
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {GEMINI_API_KEY}",
+                    "User-Agent": "RAIZEN-AI/2.0"
+                },
+                method="POST"
+            )
+
+            with urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                choices = data.get("choices", [])
+                if choices:
+                    return choices[0].get("message", {}).get("content", "")
+        except Exception as error:
+            last_error = error
+            print(f"RAIZEN GEMINI NON-STREAM ERROR ({model_name}): {error}", flush=True)
+
+    raise last_error or RuntimeError("All Gemini free models failed.")
+
+
 def chat_completion_with_retry(messages, max_tokens):
+    if GEMINI_API_KEY:
+        reply_text = gemini_chat_completion(messages, max_tokens)
+        return GeminiResponse(reply_text)
     last_error = None
     models_to_try = [MODEL] + [m for m in FALLBACK_CHAT_MODELS if m != MODEL]
     for model_name in models_to_try:
@@ -574,6 +649,44 @@ def chat_completion_with_retry(messages, max_tokens):
 
 
 def chat_completion_stream(messages, max_tokens):
+    if GEMINI_API_KEY:
+        def gemini_gen():
+            payload = json.dumps({
+                "model": GEMINI_MODEL,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "stream": True,
+                "temperature": 0.7
+            }).encode("utf-8")
+            req = URLRequest(
+                GEMINI_OPENAI_URL,
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {GEMINI_API_KEY}",
+                    "User-Agent": "RAIZEN-AI/2.0"
+                },
+                method="POST"
+            )
+            with urlopen(req, timeout=45) as resp:
+                for raw_line in resp:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if line.startswith("data: "):
+                        data_str = line[6:].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data_str)
+                            choices = chunk.get("choices", [])
+                            if choices:
+                                delta = choices[0].get("delta", {})
+                                content = delta.get("content") or ""
+                                if content:
+                                    yield GeminiChunk(content)
+                        except Exception:
+                            continue
+        return gemini_gen()
+
     models_to_try = [MODEL] + [m for m in FALLBACK_CHAT_MODELS if m != MODEL]
     last_error = None
     for model_name in models_to_try:
@@ -3167,41 +3280,83 @@ Uploaded document:
         def event_stream():
             stream_success = False
             last_stream_error = None
-            models_to_try = [MODEL] + [m for m in FALLBACK_CHAT_MODELS if m != MODEL]
+            models_to_try = [GEMINI_MODEL] + [m for m in GEMINI_FREE_FALLBACK_MODELS if m != GEMINI_MODEL]
+
+            if not GEMINI_API_KEY:
+                yield "data: " + json.dumps({
+                    "error": "⚠️ GEMINI_API_KEY is not configured on the server. Please add it to your environment variables."
+                }, ensure_ascii=False) + "\n\n"
+                yield "data: [DONE]\n\n"
+                return
 
             for model_name in models_to_try:
                 tokens_yielded = False
                 try:
-                    stream = client.chat.completions.create(
-                        model=model_name,
-                        messages=messages,
-                        max_tokens=MAX_CHAT_OUTPUT_TOKENS,
-                        stream=True
+                    payload = json.dumps({
+                        "model": model_name,
+                        "messages": messages,
+                        "max_tokens": MAX_CHAT_OUTPUT_TOKENS,
+                        "stream": True,
+                        "temperature": 0.7
+                    }).encode("utf-8")
+
+                    req = URLRequest(
+                        GEMINI_OPENAI_URL,
+                        data=payload,
+                        headers={
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {GEMINI_API_KEY}",
+                            "User-Agent": "RAIZEN-AI/2.0"
+                        },
+                        method="POST"
                     )
 
-                    for chunk in stream:
-                        delta = None
-                        try:
-                            choice = chunk.choices[0]
-                            delta_obj = getattr(choice, "delta", None)
-                            if delta_obj:
-                                delta = getattr(delta_obj, "content", None) or getattr(delta_obj, "reasoning", None)
-                                if not delta and isinstance(delta_obj, dict):
-                                    delta = delta_obj.get("content") or delta_obj.get("reasoning")
-                        except Exception:
-                            delta = None
-
-                        if delta:
-                            tokens_yielded = True
-                            yield "data: " + json.dumps({"token": delta}, ensure_ascii=False) + "\n\n"
+                    with urlopen(req, timeout=45) as resp:
+                        for raw_line in resp:
+                            line = raw_line.decode("utf-8", errors="replace").strip()
+                            if not line:
+                                continue
+                            if line.startswith("data: "):
+                                data_str = line[6:].strip()
+                                if data_str == "[DONE]":
+                                    break
+                                try:
+                                    chunk = json.loads(data_str)
+                                    choices = chunk.get("choices", [])
+                                    if choices:
+                                        delta = choices[0].get("delta", {})
+                                        content = delta.get("content") or ""
+                                        if content:
+                                            tokens_yielded = True
+                                            yield "data: " + json.dumps({"token": content}, ensure_ascii=False) + "\n\n"
+                                except Exception:
+                                    continue
 
                     yield "data: [DONE]\n\n"
                     stream_success = True
                     break
 
+                except urllib.error.HTTPError as http_err:
+                    last_stream_error = http_err
+                    err_code = http_err.code
+                    err_body = http_err.read().decode("utf-8", errors="replace")
+                    print(f"RAIZEN GEMINI STREAM HTTP ERROR ({model_name}) [{err_code}]: {err_body[:200]}", flush=True)
+                    if tokens_yielded:
+                        # Tokens have already been sent to the frontend.
+                        # Failover must NOT happen now because doing so would concatenate
+                        # a second response onto the partial output.
+                        # Send a structured SSE error event and cleanly terminate the stream.
+                        yield "data: " + json.dumps({"error": "⚠️ Stream disconnected. Response may be incomplete."}, ensure_ascii=False) + "\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
+
                 except Exception as error:
                     last_stream_error = error
-                    print(f"RAIZEN STREAM ERROR ({model_name}) [{type(error).__name__}]: {error}", flush=True)
+                    print(f"RAIZEN GEMINI STREAM ERROR ({model_name}) [{type(error).__name__}]: {error}", flush=True)
+                    if tokens_yielded:
+                        yield "data: " + json.dumps({"error": "⚠️ Stream disconnected. Response may be incomplete."}, ensure_ascii=False) + "\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
                     if tokens_yielded:
                         # Tokens have already been sent to the frontend.
                         # Failover must NOT happen now because doing so would concatenate
@@ -3212,24 +3367,28 @@ Uploaded document:
                         return
 
             if not stream_success:
-                print("RAIZEN STREAM FAILED ON ALL MODELS, ATTEMPTING NON-STREAMING FALLBACK...", flush=True)
+                print("RAIZEN GEMINI STREAM FAILED ON ALL FREE MODELS, ATTEMPTING NON-STREAMING FALLBACK...", flush=True)
                 try:
-                    resp = chat_completion_with_retry(messages, MAX_CHAT_OUTPUT_TOKENS)
-                    reply_text = resp.choices[0].message.content
+                    reply_text = gemini_chat_completion(messages, MAX_CHAT_OUTPUT_TOKENS)
                     if reply_text:
                         yield "data: " + json.dumps({"token": reply_text}, ensure_ascii=False) + "\n\n"
                         yield "data: [DONE]\n\n"
                         stream_success = True
                 except Exception as fallback_err:
-                    print(f"RAIZEN NON-STREAMING FALLBACK ERROR: {fallback_err}", flush=True)
+                    print(f"RAIZEN GEMINI NON-STREAMING FALLBACK ERROR: {fallback_err}", flush=True)
 
             if not stream_success:
-                err_msg = "⚠️ RAIZEN could not reach the AI service. Please try again."
+                err_msg = "⚠️ Unable to reach Gemini free AI service. Please try again."
                 err_str = str(last_stream_error or "")
-                if "401" in err_str:
-                    err_msg = "⚠️ AI authentication error. Please verify HF_TOKEN in server settings."
-                elif "402" in err_str:
-                    err_msg = "⚠️ AI service quota exceeded. Please check Hugging Face provider credits."
+                err_code = getattr(last_stream_error, "code", None)
+
+                if err_code in (400, 401, 403) or "401" in err_str or "API key not valid" in err_str or "INVALID_ARGUMENT" in err_str:
+                    err_msg = "⚠️ Gemini API authentication error. Please verify GEMINI_API_KEY in server settings."
+                elif err_code == 429 or "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                    err_msg = "⚠️ Gemini free-tier rate limit reached (15 RPM / 1500 RPD). Please wait a moment and try again."
+                elif "quota" in err_str.lower():
+                    err_msg = "⚠️ Gemini free-tier quota exceeded. Please wait for the daily quota reset."
+
                 elif "429" in err_str:
                     err_msg = "⚠️ AI service is busy (rate limit). Please wait a moment and try again."
                 yield "data: " + json.dumps({"error": err_msg}, ensure_ascii=False) + "\n\n"
@@ -3246,27 +3405,21 @@ Uploaded document:
         )
 
     try:
-        response = chat_completion_with_retry(
-            messages,
-            MAX_CHAT_OUTPUT_TOKENS
-        )
-
-        reply = response.choices[0].message.content
-
+        reply = gemini_chat_completion(messages, MAX_CHAT_OUTPUT_TOKENS)
         if not reply:
             reply = "Sorry, I could not generate a response."
-
         return {"reply": reply}
-
     except Exception as error:
-        print("RAIZEN ERROR:", error)
-
-        return {
-            "reply": (
-                "⚠️ RAIZEN is temporarily unable to respond. "
-                "Please try again."
-            )
-        }
+        print("RAIZEN GEMINI CHAT ERROR:", error)
+        err_str = str(error)
+        err_code = getattr(error, "code", None)
+        if not GEMINI_API_KEY:
+            return {"reply": "⚠️ GEMINI_API_KEY is not configured on the server. Please add it to your environment variables."}
+        if err_code in (400, 401, 403) or "401" in err_str or "API key not valid" in err_str:
+            return {"reply": "⚠️ Gemini API authentication error. Please verify GEMINI_API_KEY in server settings."}
+        elif err_code == 429 or "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+            return {"reply": "⚠️ Gemini free-tier rate limit reached (15 RPM / 1500 RPD). Please wait a moment and try again."}
+        return {"reply": "⚠️ RAIZEN is temporarily unable to respond. Please try again."}
 
 
 class ImageRequest(BaseModel):
@@ -3376,8 +3529,10 @@ async def health():
             print("HEALTH DATABASE ERROR:", error)
 
     return {
-        "status": "ok" if bool(HF_TOKEN) else "degraded",
-        "token_loaded": bool(HF_TOKEN),
+        "status": "ok" if (bool(GEMINI_API_KEY) or bool(HF_TOKEN)) else "degraded",
+        "gemini_configured": bool(GEMINI_API_KEY),
+        "token_loaded": bool(GEMINI_API_KEY) or bool(HF_TOKEN),
+        "hf_token_loaded": bool(HF_TOKEN),
         "database_configured": bool(DATABASE_URL),
         "database_connected": database_ok,
         "auth_required": False,
