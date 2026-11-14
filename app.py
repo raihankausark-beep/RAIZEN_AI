@@ -1,4 +1,5 @@
 import os
+import asyncio
 import json
 import re
 import base64
@@ -703,13 +704,16 @@ def chat_completion_stream(messages, max_tokens):
 
 
 def needs_live_search(message):
-    keywords = [
-        "latest", "today", "current", "recent", "news",
-        "right now", "this week", "this month",
-        "search", "trending", "weather", "temperature", "forecast"
-    ]
-    text = message.lower()
-    return any(word in text for word in keywords)
+    """Trigger external search only for clear freshness/search intent."""
+    text = (message or "").lower()
+    patterns = (
+        r"\b(latest|recent|trending|breaking news)\b",
+        r"\b(today|right now|currently|this week|this month)\b",
+        r"\b(news|headlines)\b",
+        r"\b(search the web|search online|look up online|find online)\b",
+        r"\b(current price|current version|current status|current events)\b",
+    )
+    return any(re.search(pattern, text) for pattern in patterns)
 
 
 def google_news_search(query):
@@ -3148,7 +3152,8 @@ async def vision(file: UploadFile = File(...), question: str = Form(""), token: 
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
-    username = get_authenticated_username(request.token)
+    # Keep synchronous DB authentication off FastAPI's event loop.
+    username = await asyncio.to_thread(get_authenticated_username, request.token)
     if not username:
         return {"reply": "🔐 Please log in to use RAIZEN."}
     message = request.message.strip()
@@ -3173,7 +3178,7 @@ async def chat(request: ChatRequest):
                 )
             }
 
-        result = weather_search(city)
+        result = await asyncio.to_thread(weather_search, city)
 
         if result:
             return {"reply": result}
@@ -3188,7 +3193,8 @@ async def chat(request: ChatRequest):
     live_data = ""
 
     if needs_live_search(message):
-        live_data = live_search(message)
+        # External urllib calls run in a worker thread, not on the ASGI loop.
+        live_data = await asyncio.to_thread(live_search, message)
 
     personality = PERSONALITIES.get(
         request.personality,
