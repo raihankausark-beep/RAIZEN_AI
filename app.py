@@ -2272,6 +2272,11 @@ window.sendMessage = async function sendMessage() {
     activeThinkingMessage = thinking;
     activeRequestType = visionFile ? "vision" : "chat";
 
+    // Keep stream state outside try so the catch handler can safely render errors.
+    let streamedMessage = null;
+    let reply = "";
+    let chatTimeoutId = null;
+
     try {
         if (visionFile) {
             const visionCtrl = beginAsyncOperation("vision", thinking);
@@ -2314,11 +2319,11 @@ window.sendMessage = async function sendMessage() {
         const controller = new AbortController();
         activeChatController = controller;
         document.getElementById("stopButton").classList.add("active");
-        const timeoutId = setTimeout(() => controller.abort(), 90000);
+        // Keep the timeout active while reading the response body, not just until headers arrive.
+        chatTimeoutId = setTimeout(() => controller.abort(), 90000);
 
         let response;
-        try {
-            response = await fetch("/chat", {
+        response = await fetch("/chat", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json"
@@ -2340,9 +2345,6 @@ window.sendMessage = async function sendMessage() {
                 }),
                 signal: controller.signal
             });
-        } finally {
-            clearTimeout(timeoutId);
-        }
 
         if (!response.ok) {
             const errorText = await response.text();
@@ -2351,9 +2353,6 @@ window.sendMessage = async function sendMessage() {
         }
 
         const contentType = response.headers.get("content-type") || "";
-        let streamedMessage = null;
-        let reply = "";
-
         if (contentType.includes("text/event-stream")) {
             if (thinking) thinking.remove();
 
@@ -2415,6 +2414,11 @@ window.sendMessage = async function sendMessage() {
             lastNormalAssistantMessage = displayMessage("assistant", reply);
         }
 
+        if (chatTimeoutId) {
+            clearTimeout(chatTimeoutId);
+            chatTimeoutId = null;
+        }
+
         const actions = document.createElement("div");
         actions.className = "message-actions";
         const regen = document.createElement("button");
@@ -2433,6 +2437,10 @@ window.sendMessage = async function sendMessage() {
         saveCurrentChat();
 
     } catch (error) {
+        if (chatTimeoutId) {
+            clearTimeout(chatTimeoutId);
+            chatTimeoutId = null;
+        }
         if (thinking) thinking.remove();
 
         console.error("RAIZEN CHAT ERROR:", error);
@@ -3317,7 +3325,8 @@ Uploaded document:
                         method="POST"
                     )
 
-                    with urlopen(req, timeout=45) as resp:
+                    stream_timeout = 30 if model_name == GEMINI_MODEL else 25
+                    with urlopen(req, timeout=stream_timeout) as resp:
                         for raw_line in resp:
                             line = raw_line.decode("utf-8", errors="replace").strip()
                             if not line:
@@ -3360,28 +3369,13 @@ Uploaded document:
                     last_stream_error = error
                     print(f"RAIZEN GEMINI STREAM ERROR ({model_name}) [{type(error).__name__}]: {error}", flush=True)
                     if tokens_yielded:
-                        yield "data: " + json.dumps({"error": "⚠️ Stream disconnected. Response may be incomplete."}, ensure_ascii=False) + "\n\n"
-                        yield "data: [DONE]\n\n"
-                        return
-                    if tokens_yielded:
-                        # Tokens have already been sent to the frontend.
-                        # Failover must NOT happen now because doing so would concatenate
-                        # a second response onto the partial output.
-                        # Send a structured SSE error event and cleanly terminate the stream.
+                        # Do not concatenate a second model response onto partial output.
                         yield "data: " + json.dumps({"error": "⚠️ Stream disconnected. Response may be incomplete."}, ensure_ascii=False) + "\n\n"
                         yield "data: [DONE]\n\n"
                         return
 
-            if not stream_success:
-                print("RAIZEN GEMINI STREAM FAILED ON ALL FREE MODELS, ATTEMPTING NON-STREAMING FALLBACK...", flush=True)
-                try:
-                    reply_text = gemini_chat_completion(messages, MAX_CHAT_OUTPUT_TOKENS)
-                    if reply_text:
-                        yield "data: " + json.dumps({"token": reply_text}, ensure_ascii=False) + "\n\n"
-                        yield "data: [DONE]\n\n"
-                        stream_success = True
-                except Exception as fallback_err:
-                    print(f"RAIZEN GEMINI NON-STREAMING FALLBACK ERROR: {fallback_err}", flush=True)
+            # Do not start another long non-streaming request after both stream attempts
+            # have timed out; return a clear error instead of leaving the UI waiting.
 
             if not stream_success:
                 err_msg = "⚠️ Unable to reach Gemini free AI service. Please try again."
