@@ -1388,6 +1388,33 @@ button{color:inherit}
  .composer-note{font-size:9px}
  .topbar{height:68px;min-height:68px;padding:10px 12px}.icon-btn{width:46px;height:46px;border-radius:14px}.brand-pill{height:42px;padding:0 15px;font-size:18px}.chat{padding:0 12px 170px}.hero{margin-top:10vh;padding:10px 4px}.hero-title{font-size:34px}.hero-subtitle{font-size:14px;max-width:330px;margin-bottom:25px}.prompt-grid{grid-template-columns:1fr 1fr;gap:8px}.prompt-card{min-height:65px;padding:11px;font-size:12px;border-radius:16px}.prompt-card strong{font-size:13px}.message{max-width:94%;font-size:14px}.composer-wrap{padding:8px 10px calc(10px + env(safe-area-inset-bottom))}.tool-chip{font-size:11px;padding:7px 10px}.input-area{border-radius:25px;padding-left:8px}.circle-btn,#sendButton{width:41px;height:41px;flex-basis:41px}.history-drawer{width:88%;left:-92%}.history-drawer.open{left:0}
 }
+
+.activity-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:16px 0}
+.activity-stat{background:#1a1a1a;border:1px solid #303030;border-radius:13px;padding:15px}
+.activity-stat span{display:block;color:#999;font-size:11px}
+.activity-stat strong{display:block;color:#fff;font-size:27px;margin-top:6px}
+.workspace-card textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;min-height:190px}
+.history-match-snippet{font-size:11px;color:#8c9bb0;line-height:1.4;margin-top:6px;overflow-wrap:anywhere}
+body[data-theme="light"]{--bg:#f4f6fa;--panel:#fff;--panel2:#edf0f5;--text:#171923;--muted:#626b7b;--line:#d9deea;background:#f4f6fa;color:#171923}
+body[data-theme="light"] .container,body[data-theme="light"] .topbar{background:#f4f6fa;color:#171923}
+body[data-theme="light"] .brand-pill{background:#e4edff;color:#2459a8}
+body[data-theme="light"] .icon-btn,body[data-theme="light"] .circle-btn{background:#e2e7f0;color:#1d2738}
+body[data-theme="light"] .chat{color:#171923}
+body[data-theme="light"] .assistant,body[data-theme="light"] .prompt-card,body[data-theme="light"] .history-drawer,body[data-theme="light"] .preferences-card{background:#fff;color:#171923;border-color:#d9deea}
+body[data-theme="light"] .user{background:#e7edf8;color:#171923;border-color:#d1dced}
+body[data-theme="light"] .input-area{background:#fff;border-color:#d5dbe6}
+body[data-theme="light"] #messageInput{color:#171923}
+body[data-theme="light"] .composer-wrap{background:linear-gradient(to top,#f4f6fa 72%,rgba(244,246,250,.96) 86%,transparent)}
+body[data-theme="light"] .history-item,body[data-theme="light"] .history-tool-btn,body[data-theme="light"] .folder-filter,body[data-theme="light"] .activity-stat{background:#f3f5f9;color:#202635;border-color:#d9deea}
+body[data-theme="light"] .history-title,body[data-theme="light"] .prompt-card strong{color:#171923}
+body[data-theme="light"] .preferences-card select,body[data-theme="light"] .preferences-card textarea{background:#f7f8fb;color:#171923;border-color:#d9deea}
+body[data-theme="ocean"]{--accent:#36c6d3}
+body[data-theme="ocean"] .brand-pill{background:#10313a;color:#55d8e4}
+body[data-theme="ocean"] #sendButton{background:#1599aa}
+body[data-theme="violet"]{--accent:#a78bfa}
+body[data-theme="violet"] .brand-pill{background:#2b2044;color:#c4a9ff}
+body[data-theme="violet"] #sendButton{background:#7853c6}
+@media(max-width:650px){.activity-grid{gap:8px}.activity-stat{padding:12px}.workspace-card textarea{min-height:150px}}
 </style>
 </head>
 <body>
@@ -1437,6 +1464,10 @@ button{color:inherit}
       <button class="history-tool-btn" onclick="exportCurrentChat('txt')">↓ Export TXT</button>
       <button class="history-tool-btn" onclick="exportCurrentChat('pdf')">▤ Save PDF</button>
       <button class="history-tool-btn" onclick="openPreferences()">⚙ Preferences</button>
+      <button class="history-tool-btn" onclick="openCodeStudio()">⌘ Code Studio</button>
+      <button class="history-tool-btn" onclick="openActivityDashboard()">▥ My Activity</button>
+      <button class="history-tool-btn" onclick="cycleTheme()">◐ Change Theme</button>
+      <button class="history-tool-btn" id="voiceModeButton" onclick="toggleVoiceMode()">🔊 Voice Mode: Off</button>
     </div>
     <div id="folderFilters" class="folder-filters"></div>
     <input id="historySearch" class="history-search" type="search" placeholder="Search your conversations..." aria-label="Search chat history" oninput="renderHistory()">
@@ -1508,6 +1539,32 @@ button{color:inherit}
     <textarea id="customInstructions" rows="4" placeholder="How should RAIZEN respond?"></textarea>
     <p class="preferences-hint">Stored in this browser for this signed-in account. You can edit or clear these notes anytime.</p>
     <div class="preferences-actions"><button type="button" onclick="clearPersonalMemory()">Clear saved notes</button><button type="button" class="preferences-save" onclick="savePreferences()">Save preferences</button></div>
+  </div>
+</div>
+
+<div id="codeStudioModal" class="preferences-modal" aria-hidden="true">
+  <div class="preferences-card workspace-card" role="dialog" aria-modal="true" aria-labelledby="codeStudioTitle">
+    <div class="preferences-heading"><strong id="codeStudioTitle">⌘ RAIZEN Code Studio</strong><button type="button" onclick="closeCodeStudio()" aria-label="Close Code Studio">✕</button></div>
+    <label for="codeLanguage">Programming language</label>
+    <select id="codeLanguage"><option>C</option><option>C++</option><option>Python</option><option>Java</option><option>JavaScript</option><option>HTML/CSS</option><option>SQL</option><option>Other</option></select>
+    <label for="codeTask">What should RAIZEN do?</label>
+    <select id="codeTask"><option value="debug">Debug this code and explain the errors</option><option value="explain">Explain this code step by step</option><option value="optimize">Improve readability and efficiency</option><option value="write">Help me complete or write this code</option><option value="review">Review this code for correctness and edge cases</option></select>
+    <label for="codeInput">Paste your code or describe the problem</label>
+    <textarea id="codeInput" rows="10" spellcheck="false" placeholder="Paste your code here..."></textarea>
+    <p class="preferences-hint">RAIZEN will review the code and reply in chat. Code Studio does not execute code on the server.</p>
+    <div class="preferences-actions"><button type="button" onclick="document.getElementById('codeInput').value=''">Clear</button><button type="button" class="preferences-save" onclick="sendCodeStudioTask()">Send to RAIZEN</button></div>
+  </div>
+</div>
+<div id="activityModal" class="preferences-modal" aria-hidden="true">
+  <div class="preferences-card" role="dialog" aria-modal="true" aria-labelledby="activityTitle">
+    <div class="preferences-heading"><strong id="activityTitle">▥ Your RAIZEN Activity</strong><button type="button" onclick="closeActivityDashboard()" aria-label="Close activity">✕</button></div>
+    <div class="activity-grid">
+      <div class="activity-stat"><span>Saved chats</span><strong id="activityChats">0</strong></div>
+      <div class="activity-stat"><span>Messages saved</span><strong id="activityMessages">0</strong></div>
+      <div class="activity-stat"><span>Pinned chats</span><strong id="activityPinned">0</strong></div>
+      <div class="activity-stat"><span>Folders</span><strong id="activityFolders">0</strong></div>
+    </div>
+    <p class="preferences-hint">These figures are calculated from conversations saved in this browser. They are not server-wide usage analytics.</p>
   </div>
 </div>
 
@@ -1661,6 +1718,7 @@ function showAppDirect(){
     if (authScreen) authScreen.style.display = "none";
     if (container) container.style.display = "flex";
     loadPreferences();
+    loadVisualPreferences();
     loadChatHistory();
 }
 
@@ -1859,12 +1917,15 @@ function renderHistory() {
         const title = document.createElement("div"); title.className = "history-title"; title.textContent = (chat.pinned ? "📌 " : "") + (chat.title || "New Chat");
         const date = document.createElement("div"); date.className = "history-date"; date.textContent = new Date(chat.updatedAt).toLocaleString();
         const folder = document.createElement("div"); folder.className = "history-folder-label"; folder.textContent = chat.folder ? "📁 " + chat.folder : "";
+        const match = query ? (Array.isArray(chat.messages) ? chat.messages.find(message => String(message.content || "").toLowerCase().includes(query)) : null) : null;
+        const snippet = document.createElement("div"); snippet.className = "history-match-snippet";
+        if (match) { const raw = String(match.content || "").replace(/\\s+/g," ").trim(); const at = raw.toLowerCase().indexOf(query); snippet.textContent = (match.role === "user" ? "You: " : "RAIZEN: ") + (at > 35 ? "…" : "") + raw.slice(Math.max(0,at-35), Math.max(0,at-35)+105) + (raw.length > Math.max(0,at-35)+105 ? "…" : ""); }
         const del = document.createElement("button"); del.className = "history-delete"; del.textContent = "🗑"; del.title = "Delete chat"; del.onclick = e => { e.stopPropagation(); deleteChat(chat.id); };
         const tools = document.createElement("div"); tools.className = "history-item-tools";
         const pin = document.createElement("button"); pin.className = "history-mini-btn"; pin.textContent = chat.pinned ? "Unpin" : "📌 Pin"; pin.onclick = e => { e.stopPropagation(); togglePinChat(chat.id); };
         const move = document.createElement("button"); move.className = "history-mini-btn"; move.textContent = "📁 Folder"; move.onclick = e => { e.stopPropagation(); assignChatFolder(chat.id); };
         tools.appendChild(pin); tools.appendChild(move);
-        item.appendChild(title); item.appendChild(date); if(chat.folder) item.appendChild(folder); item.appendChild(del); item.appendChild(tools);
+        item.appendChild(title); item.appendChild(date); if(chat.folder) item.appendChild(folder); if(match) item.appendChild(snippet); item.appendChild(del); item.appendChild(tools);
         item.onclick = () => openChat(chat.id); list.appendChild(item);
     });
 }
@@ -1943,6 +2004,63 @@ function toggleVoiceInput() {
     recognition.onend=()=>{if(button)button.textContent="🎙";window.raizenRecognition=null;document.getElementById("messageInput").focus();};
     try{recognition.start();}catch(error){window.raizenRecognition=null;if(button)button.textContent="🎙";alert("Could not start voice input. Check microphone permission.");}
 }
+
+let raizenVoiceMode = false;
+let raizenCurrentTheme = "dark";
+function loadVisualPreferences() {
+    const key=loggedInUsername.toLowerCase();
+    raizenVoiceMode=localStorage.getItem("raizen_voice_mode_"+key)==="on";
+    raizenCurrentTheme=localStorage.getItem("raizen_theme_"+key)||"dark";
+    applyRaizenTheme(); updateVoiceModeButton();
+}
+function updateVoiceModeButton() {
+    const button=document.getElementById("voiceModeButton");
+    if(button){button.textContent=raizenVoiceMode?"🔊 Voice Mode: On":"🔊 Voice Mode: Off";button.classList.toggle("active",raizenVoiceMode);}
+}
+function toggleVoiceMode() {
+    raizenVoiceMode=!raizenVoiceMode;
+    localStorage.setItem("raizen_voice_mode_"+loggedInUsername.toLowerCase(),raizenVoiceMode?"on":"off");
+    updateVoiceModeButton();
+    if(!raizenVoiceMode && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    if(raizenVoiceMode) speakRaizenReply("Voice mode is on. New replies will be read aloud.");
+}
+function speakRaizenReply(text) {
+    if(!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance==="undefined") return;
+    window.speechSynthesis.cancel();
+    const clean=String(text||"").replace(/\x60\x60\x60[\s\S]*?\x60\x60\x60/g,"Code block omitted from voice reply.").replace(/https?:\/\/\S+/g,"link").slice(0,12000);
+    const utterance=new SpeechSynthesisUtterance(clean); utterance.rate=1; utterance.pitch=1;
+    window.speechSynthesis.speak(utterance);
+}
+function applyRaizenTheme() {
+    document.body.setAttribute("data-theme",raizenCurrentTheme);
+    const meta=document.querySelector('meta[name="theme-color"]');
+    if(meta) meta.content=raizenCurrentTheme==="light"?"#f4f6fa":raizenCurrentTheme==="ocean"?"#061216":raizenCurrentTheme==="violet"?"#100b1c":"#000000";
+}
+function cycleTheme() {
+    const themes=["dark","light","ocean","violet"];
+    raizenCurrentTheme=themes[(themes.indexOf(raizenCurrentTheme)+1)%themes.length];
+    localStorage.setItem("raizen_theme_"+loggedInUsername.toLowerCase(),raizenCurrentTheme);
+    applyRaizenTheme();
+    alert("RAIZEN theme: "+raizenCurrentTheme.charAt(0).toUpperCase()+raizenCurrentTheme.slice(1));
+}
+function openCodeStudio() { const modal=document.getElementById("codeStudioModal"); if(modal){modal.classList.add("open");modal.setAttribute("aria-hidden","false");} }
+function closeCodeStudio() { const modal=document.getElementById("codeStudioModal"); if(modal){modal.classList.remove("open");modal.setAttribute("aria-hidden","true");} }
+function sendCodeStudioTask() {
+    const language=document.getElementById("codeLanguage").value, task=document.getElementById("codeTask").value, code=document.getElementById("codeInput").value.trim();
+    if(!code){alert("Paste your code or describe the coding problem first.");return;}
+    const prompt="Act as my coding assistant. Programming language: "+language+". Task: "+task+". Explain clearly, show corrected code when appropriate, and point out important edge cases.\n\nInput:\n"+code;
+    closeCodeStudio(); document.getElementById("personality").value="Coding Assistant"; document.getElementById("responseStyle").value="Detailed"; usePrompt(prompt); window.sendMessage();
+}
+function openActivityDashboard() {
+    const chats=Array.isArray(savedChats)?savedChats:[];
+    const messages=chats.reduce((sum,chat)=>sum+(Array.isArray(chat.messages)?chat.messages.length:0),0);
+    document.getElementById("activityChats").textContent=chats.length;
+    document.getElementById("activityMessages").textContent=messages;
+    document.getElementById("activityPinned").textContent=chats.filter(chat=>chat.pinned).length;
+    document.getElementById("activityFolders").textContent=getChatFolders().length;
+    const modal=document.getElementById("activityModal"); if(modal){modal.classList.add("open");modal.setAttribute("aria-hidden","false");}
+}
+function closeActivityDashboard() { const modal=document.getElementById("activityModal"); if(modal){modal.classList.remove("open");modal.setAttribute("aria-hidden","true");} }
 
 function openChat(id) {
     const selected = savedChats.find(c => c.id === id);
@@ -2728,6 +2846,7 @@ window.sendMessage = async function sendMessage() {
         regen.onclick = function() { regenerateLastResponse(); };
         actions.appendChild(regen);
         lastNormalAssistantMessage.appendChild(actions);
+        if (raizenVoiceMode) speakRaizenReply(reply);
 
         chatHistory.push({
             role: "assistant",
