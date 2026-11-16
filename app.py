@@ -622,34 +622,38 @@ def gemini_chat_completion(messages, max_tokens=MAX_CHAT_OUTPUT_TOKENS):
     last_error = None
 
     for model_name in models_to_try:
-        try:
-            payload = json.dumps({
-                "model": model_name,
-                "messages": messages,
-                "max_tokens": max_tokens,
-                "stream": False,
-                "temperature": 0.7
-            }).encode("utf-8")
+        for attempt in range(2):
+            try:
+                payload = json.dumps({
+                    "model": model_name,
+                    "messages": messages,
+                    "max_tokens": max_tokens,
+                    "stream": False,
+                    "temperature": 0.7
+                }).encode("utf-8")
 
-            req = URLRequest(
-                GEMINI_OPENAI_URL,
-                data=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {GEMINI_API_KEY}",
-                    "User-Agent": "RAIZEN-AI/2.0"
-                },
-                method="POST"
-            )
+                req = URLRequest(
+                    GEMINI_OPENAI_URL,
+                    data=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {GEMINI_API_KEY}",
+                        "User-Agent": "RAIZEN-AI/2.0"
+                    },
+                    method="POST"
+                )
 
-            with urlopen(req, timeout=30) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                choices = data.get("choices", [])
-                if choices:
-                    return choices[0].get("message", {}).get("content", "")
-        except Exception as error:
-            last_error = error
-            print(f"RAIZEN GEMINI NON-STREAM ERROR ({model_name}): {error}", flush=True)
+                with urlopen(req, timeout=30) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    choices = data.get("choices", [])
+                    if choices:
+                        return choices[0].get("message", {}).get("content", "")
+                    raise RuntimeError("Gemini returned no chat choices.")
+            except Exception as error:
+                last_error = error
+                print(f"RAIZEN GEMINI NON-STREAM ERROR ({model_name} attempt {attempt+1}/2): {type(error).__name__}: {error}", flush=True)
+                if attempt == 0:
+                    time.sleep(0.6)
 
     raise last_error or RuntimeError("All Gemini free models failed.")
 
@@ -2337,9 +2341,15 @@ function exportSingleChat(id) {
 }
 
 function exportHistoryBackup() {
-    if (!savedChats.length) { alert("There are no saved conversations to back up."); return; }
-    downloadJsonFile("raizen-history-backup-" + new Date().toISOString().slice(0,10) + ".json", {
-        format: "raizen-chat-backup", version: 1, exportedAt: new Date().toISOString(), chats: savedChats
+    const key = loggedInUsername.toLowerCase();
+    const settings = {};
+    ["personality","response_style","custom_instructions","memory_notes"].forEach(name => {
+        const value = localStorage.getItem("raizen_" + name + "_" + key);
+        if (value !== null) settings[name] = value;
+    });
+    downloadJsonFile("raizen-full-backup-" + new Date().toISOString().slice(0,10) + ".json", {
+        format: "raizen-chat-backup", version: 2, exportedAt: new Date().toISOString(),
+        account: key, chats: savedChats, settings
     });
 }
 
@@ -2349,7 +2359,7 @@ function importHistoryBackup(event) {
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) { alert("Backup file is too large. Maximum size is 10 MB."); return; }
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
         try {
             const backup = JSON.parse(String(reader.result || ""));
             if (!backup || backup.format !== "raizen-chat-backup" || !Array.isArray(backup.chats)) {
@@ -2376,8 +2386,23 @@ function importHistoryBackup(event) {
             });
             savedChats = [...merged.values()].sort((a,b) => b.updatedAt-a.updatedAt).slice(0,500);
             saveChats();
+            const key = loggedInUsername.toLowerCase();
+            const settings = backup.settings && typeof backup.settings === "object" ? backup.settings : {};
+            ["personality","response_style","custom_instructions","memory_notes"].forEach(name => {
+                if (typeof settings[name] === "string") {
+                    const limit = name === "memory_notes" || name === "custom_instructions" ? 12000 : 100;
+                    localStorage.setItem("raizen_" + name + "_" + key, settings[name].slice(0, limit));
+                }
+            });
+            if (typeof settings.memory_notes === "string" && authToken) {
+                try {
+                    const sync = await fetch("/api/memory", {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:authToken,content:settings.memory_notes.slice(0,12000)})});
+                    if (!sync.ok) console.warn("Backup restored locally; cloud memory sync needs attention.");
+                } catch (syncError) { console.warn("Backup restored locally; cloud memory sync unavailable.", syncError); }
+            }
+            loadPreferences();
             renderHistory();
-            alert("Restored " + imported.length + " conversation(s). Your existing chats were kept.");
+            alert("Restored " + imported.length + " conversation(s) and available account preferences. Existing chats were kept.");
         } catch (error) {
             alert(error.message || "Could not restore this backup.");
         }
