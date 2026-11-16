@@ -4357,7 +4357,7 @@ async def upload_file(file: UploadFile = File(...), token: str = Form("")):
         return {"error": "Unsupported file type. Please upload PDF, DOCX, or TXT."}
 
     try:
-        raw_bytes = await file.read()
+        raw_bytes = await file.read(MAX_UPLOAD_BYTES + 1)
         if len(raw_bytes) > MAX_UPLOAD_BYTES:
             return {"error": "File is too large. Maximum size is 50 MB."}
 
@@ -4394,7 +4394,7 @@ async def vision(file: UploadFile = File(...), question: str = Form(""), token: 
         }
 
     try:
-        raw_bytes = await file.read()
+        raw_bytes = await file.read(MAX_IMAGE_BYTES + 1)
 
         if len(raw_bytes) > MAX_IMAGE_BYTES:
             return {"error": "Image is too large. Maximum size is 12 MB."}
@@ -4802,7 +4802,7 @@ async def edit_image(
         return {"error": "Please upload a PNG, JPG/JPEG, or WEBP image."}
 
     try:
-        raw_bytes = await file.read()
+        raw_bytes = await file.read(MAX_IMAGE_BYTES + 1)
         if len(raw_bytes) > MAX_IMAGE_BYTES:
             return {"error": "Image is too large. Maximum size is 12 MB."}
 
@@ -4823,7 +4823,7 @@ async def edit_image(
     except Exception as error:
         print("IMAGE EDIT ERROR:", error)
         return {
-            "error": f"Image editing failed: {type(error).__name__}: {str(error)[:400]}"
+            "error": "Image editing is temporarily unavailable. Please try again."
         }
 
 
