@@ -4665,6 +4665,17 @@ async def chat(request: ChatRequest):
     await asyncio.to_thread(record_usage_event, username, "chat")
     lower = message.lower()
 
+    # Creator recognition is conversational only. Admin privileges continue to
+    # require the separately verified account/session above.
+    if lower.strip() == "raizen-origin" and ADMIN_EMAIL and username.strip().lower() == ADMIN_EMAIL.strip().lower():
+        return {
+            "reply": (
+                "👑 Creator recognized. Welcome back, Raihan! "
+                "RAIZEN knows you're its creator. Your verified account "
+                "continues to control all creator and admin permissions."
+            )
+        }
+
     if (
         "weather" in lower
         or "temperature" in lower
