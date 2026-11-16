@@ -168,6 +168,13 @@ async def robots():
     return Response(
         content=f"""User-agent: *
 Allow: /
+Disallow: /admin
+Disallow: /creator-dashboard
+Disallow: /login
+Disallow: /logout
+Disallow: /callback
+Disallow: /auth-check
+Disallow: /api/
 
 Sitemap: {APP_BASE_URL}/sitemap.xml
 """,
@@ -1303,12 +1310,35 @@ HTML = r"""
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#000000">
+<meta name="description" content="RAIZEN AI is an AI chatbot for asking questions, learning, coding, writing, web research, and working with documents. Explore the RAIZEN AI assistant.">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<meta name="googlebot" content="index,follow">
+<link rel="canonical" href="https://raizen-ai.onrender.com/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="RAIZEN AI">
+<meta property="og:title" content="RAIZEN AI – Your AI Chatbot">
+<meta property="og:description" content="Ask questions, learn, code, write, research, and work with documents using RAIZEN AI.">
+<meta property="og:url" content="https://raizen-ai.onrender.com/">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="RAIZEN AI – Your AI Chatbot">
+<meta name="twitter:description" content="An AI chatbot for questions, learning, coding, writing, and research.">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
-<title>RAIZEN AI</title>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "RAIZEN AI",
+  "applicationCategory": "UtilitiesApplication",
+  "operatingSystem": "Web",
+  "url": "https://raizen-ai.onrender.com/",
+  "description": "RAIZEN AI is an AI chatbot for asking questions, learning, coding, writing, web research, and working with documents."
+}
+</script>
+<title>RAIZEN AI – Your AI Chatbot</title>
 <style>
 .account-wrap {
     position: relative;
@@ -1913,7 +1943,7 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
   <main id="chat" class="chat">
     <section class="hero" id="heroPanel">
       <div class="hero-title">What can I help with?</div>
-      <div class="hero-subtitle">A simple space to ask questions, learn, code, and work with your files.</div>
+      <div class="hero-subtitle">RAIZEN AI is your AI chatbot for clear answers, learning, coding, writing, web research, and working with files.</div>
       <div class="prompt-grid">
         <button class="prompt-card" onclick="usePrompt('Help me write or edit something')"><strong>✎ Write or edit</strong>Draft, rewrite, or improve</button>
         <button class="prompt-card" onclick="usePrompt('Explain this topic simply')"><strong>✦ Ask anything</strong>Get a clear explanation</button>
