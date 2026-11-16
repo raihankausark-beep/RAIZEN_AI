@@ -2470,6 +2470,36 @@ window.sendMessage = async function sendMessage() {
 
         const actions = document.createElement("div");
         actions.className = "message-actions";
+
+        const copy = document.createElement("button");
+        copy.className = "message-action-btn";
+        copy.type = "button";
+        copy.textContent = "⧉ Copy";
+        copy.setAttribute("aria-label", "Copy assistant response");
+        copy.onclick = async function() {
+            try {
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(reply);
+                } else {
+                    const temporary = document.createElement("textarea");
+                    temporary.value = reply;
+                    temporary.setAttribute("readonly", "");
+                    temporary.style.position = "fixed";
+                    temporary.style.opacity = "0";
+                    document.body.appendChild(temporary);
+                    temporary.select();
+                    const copied = document.execCommand("copy");
+                    temporary.remove();
+                    if (!copied) throw new Error("Clipboard unavailable");
+                }
+                copy.textContent = "✓ Copied";
+            } catch (copyError) {
+                copy.textContent = "Copy unavailable";
+            }
+            setTimeout(() => { copy.textContent = "⧉ Copy"; }, 1600);
+        };
+        actions.appendChild(copy);
+
         const regen = document.createElement("button");
         regen.className = "message-action-btn";
         regen.type = "button";
