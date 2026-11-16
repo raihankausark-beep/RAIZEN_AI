@@ -1433,6 +1433,263 @@ body[data-theme="violet"]{--accent:#a78bfa}
 body[data-theme="violet"] .brand-pill{background:#2b2044;color:#c4a9ff}
 body[data-theme="violet"] #sendButton{background:#7853c6}
 @media(max-width:650px){.activity-grid{gap:8px}.activity-stat{padding:12px}.workspace-card textarea{min-height:150px}}
+
+/* RAIZEN FUTURE INTERFACE — visual layer only */
+:root{
+  --accent:#65eaff;
+  --raizen-cyan:#65eaff;
+  --raizen-violet:#a78bfa;
+  --raizen-glass:rgba(12,20,34,.76);
+}
+html,body{background:#050812}
+.container{
+  position:relative;
+  isolation:isolate;
+  overflow:hidden;
+  background:
+    radial-gradient(ellipse at 50% -18%,rgba(37,112,160,.20),transparent 48%),
+    linear-gradient(145deg,#050812 0%,#080d19 48%,#090817 100%);
+}
+.container::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  z-index:-1;
+  pointer-events:none;
+  opacity:.23;
+  background-image:
+    linear-gradient(rgba(101,234,255,.075) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(101,234,255,.075) 1px,transparent 1px);
+  background-size:42px 42px;
+  mask-image:linear-gradient(to bottom,black,transparent 88%);
+}
+.container::after{
+  content:"";
+  position:fixed;
+  width:520px;height:520px;
+  top:18%;left:50%;
+  transform:translateX(-50%);
+  z-index:-1;
+  pointer-events:none;
+  border-radius:50%;
+  background:radial-gradient(circle,rgba(53,170,205,.10),rgba(117,83,205,.055) 38%,transparent 70%);
+  filter:blur(18px);
+  animation:raizenAmbient 12s ease-in-out infinite alternate;
+}
+@keyframes raizenAmbient{from{opacity:.55;transform:translateX(-54%) scale(.92)}to{opacity:1;transform:translateX(-46%) scale(1.12)}}
+.topbar{
+  background:rgba(5,9,18,.78);
+  border-bottom:1px solid rgba(101,234,255,.13);
+  backdrop-filter:blur(22px);
+  -webkit-backdrop-filter:blur(22px);
+  box-shadow:0 8px 32px rgba(0,0,0,.18);
+}
+.icon-btn{
+  background:linear-gradient(145deg,rgba(28,47,67,.92),rgba(13,21,35,.94));
+  border:1px solid rgba(101,234,255,.16);
+  box-shadow:inset 0 1px rgba(255,255,255,.07),0 5px 18px rgba(0,0,0,.2);
+}
+.icon-btn:hover{border-color:rgba(101,234,255,.55);box-shadow:0 0 22px rgba(101,234,255,.13);background:#14283b}
+.brand-pill{
+  position:relative;
+  overflow:hidden;
+  background:linear-gradient(110deg,rgba(14,48,67,.96),rgba(35,28,69,.94));
+  color:#9af2ff;
+  border:1px solid rgba(101,234,255,.34);
+  box-shadow:0 0 24px rgba(47,190,220,.12),inset 0 1px rgba(255,255,255,.10);
+  letter-spacing:1.4px;
+}
+.brand-pill::after{
+  content:"";
+  position:absolute;
+  top:-80%;left:-45%;
+  width:35%;height:260%;
+  transform:rotate(25deg);
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.16),transparent);
+  animation:raizenSweep 7s ease-in-out infinite;
+}
+@keyframes raizenSweep{0%,65%{left:-45%}100%{left:130%}}
+.top-right .status{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  padding:8px 11px;
+  border:1px solid rgba(89,236,174,.24);
+  border-radius:999px;
+  color:#8cf3c2;
+  background:rgba(20,90,68,.14);
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:1.1px;
+}
+.top-right .status::before{
+  content:"";
+  width:7px;height:7px;
+  border-radius:50%;
+  background:#61efae;
+  box-shadow:0 0 12px #61efae;
+  animation:raizenPulse 2s ease-in-out infinite;
+}
+.top-right .status + .status{display:none}
+@keyframes raizenPulse{50%{opacity:.42;box-shadow:0 0 3px #61efae}}
+.chat{position:relative;background:transparent}
+.hero{
+  position:relative;
+  margin-top:7vh;
+  padding:34px 18px 22px;
+  border:1px solid rgba(101,234,255,.12);
+  border-radius:30px;
+  background:linear-gradient(145deg,rgba(12,24,39,.66),rgba(16,13,35,.48));
+  box-shadow:0 22px 80px rgba(0,0,0,.20),inset 0 1px rgba(255,255,255,.055);
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+}
+.hero::before{
+  content:"RAIZEN INTELLIGENCE SYSTEM  /  READY";
+  display:inline-block;
+  margin:0 auto 20px;
+  padding:7px 12px;
+  border:1px solid rgba(101,234,255,.24);
+  border-radius:999px;
+  color:#83eafa;
+  background:rgba(26,96,119,.13);
+  font:700 10px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;
+  letter-spacing:1.7px;
+}
+.hero-title{
+  background:linear-gradient(100deg,#fff 10%,#9af2ff 48%,#c6a9ff 88%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+  text-shadow:0 0 38px rgba(101,234,255,.12);
+  letter-spacing:-1.8px;
+}
+.hero-subtitle{color:#a4b5c9}
+.prompt-card{
+  position:relative;
+  overflow:hidden;
+  background:linear-gradient(145deg,rgba(20,34,52,.88),rgba(14,18,34,.9));
+  border:1px solid rgba(120,170,205,.17);
+  box-shadow:inset 0 1px rgba(255,255,255,.045),0 8px 24px rgba(0,0,0,.13);
+  color:#cbd9e8;
+  backdrop-filter:blur(10px);
+}
+.prompt-card strong{color:#e8faff}
+.prompt-card:hover{
+  background:linear-gradient(145deg,rgba(20,57,76,.92),rgba(32,25,62,.92));
+  border-color:rgba(101,234,255,.52);
+  box-shadow:0 0 25px rgba(101,234,255,.10),inset 0 1px rgba(255,255,255,.08);
+  transform:translateY(-3px);
+}
+.message{box-shadow:0 10px 32px rgba(0,0,0,.12)}
+.user{
+  background:linear-gradient(135deg,rgba(25,53,76,.96),rgba(31,35,68,.96));
+  border:1px solid rgba(101,190,255,.22);
+}
+.assistant{
+  background:linear-gradient(145deg,rgba(14,24,38,.96),rgba(16,17,34,.96));
+  border:1px solid rgba(130,170,210,.16);
+}
+.composer-wrap{
+  background:linear-gradient(to top,rgba(5,8,17,.99) 68%,rgba(5,8,17,.91) 86%,transparent);
+}
+.input-area{
+  background:rgba(13,23,37,.94);
+  border:1px solid rgba(101,234,255,.28);
+  box-shadow:0 0 0 1px rgba(101,234,255,.035),0 12px 44px rgba(0,0,0,.45),0 0 32px rgba(47,190,220,.075);
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+}
+#messageInput{color:#f4fbff}
+#messageInput::placeholder{color:#8298ad}
+.circle-btn{
+  background:linear-gradient(145deg,#1b344a,#142238);
+  border:1px solid rgba(101,234,255,.18);
+}
+.circle-btn:hover{background:#1d4960;box-shadow:0 0 18px rgba(101,234,255,.14)}
+#sendButton{
+  background:linear-gradient(135deg,#39c8df,#5a83ff 58%,#9571ee);
+  box-shadow:0 0 22px rgba(76,190,255,.28);
+}
+#sendButton:hover{filter:brightness(1.14);box-shadow:0 0 30px rgba(76,190,255,.42)}
+.tool-chip{
+  background:rgba(15,26,42,.88);
+  border-color:rgba(120,170,205,.19);
+  color:#b9d0e2;
+}
+.tool-chip:hover{background:rgba(25,54,76,.94);border-color:rgba(101,234,255,.4)}
+.composer-note{color:#71869c;letter-spacing:.45px}
+.history-drawer{
+  background:rgba(7,13,24,.97);
+  border-right:1px solid rgba(101,234,255,.17);
+  backdrop-filter:blur(24px);
+  -webkit-backdrop-filter:blur(24px);
+}
+.history-item,.history-tool-btn,.new-chat-history,.clear-history-btn{
+  background:rgba(18,29,45,.86);
+  border-color:rgba(120,170,205,.14);
+}
+.history-item:hover,.history-tool-btn:hover,.new-chat-history:hover,.clear-history-btn:hover{
+  border-color:rgba(101,234,255,.38);
+  box-shadow:0 0 18px rgba(101,234,255,.07);
+}
+.preferences-card{
+  background:linear-gradient(145deg,rgba(12,22,37,.98),rgba(18,16,37,.98));
+  border-color:rgba(101,234,255,.23);
+  box-shadow:0 28px 100px rgba(0,0,0,.72),0 0 38px rgba(55,170,210,.08);
+}
+.preferences-heading{color:#eafaff}
+.preferences-card select,.preferences-card textarea,.history-search{
+  background:rgba(7,15,27,.92);
+  border-color:rgba(120,170,205,.22);
+}
+.preferences-card select:focus,.preferences-card textarea:focus,.history-search:focus{
+  border-color:rgba(101,234,255,.65);
+  box-shadow:0 0 0 3px rgba(101,234,255,.10);
+}
+.preferences-actions .preferences-save{
+  background:linear-gradient(120deg,#159cb8,#526de0 65%,#8058c9);
+  border-color:rgba(101,234,255,.35);
+  box-shadow:0 5px 18px rgba(61,151,220,.17);
+}
+.account-menu{
+  background:rgba(10,18,31,.98);
+  border-color:rgba(101,234,255,.22);
+  backdrop-filter:blur(20px);
+}
+.account-menu button:hover{background:rgba(101,234,255,.12)}
+@media(max-width:650px){
+  .hero{margin-top:4vh;padding:24px 12px 16px;border-radius:23px}
+  .hero::before{font-size:9px;letter-spacing:1.1px;margin-bottom:15px}
+  .top-right .status{display:none}
+  .prompt-card{backdrop-filter:none}
+}
+@media(prefers-reduced-motion:reduce){
+  .container::after,.brand-pill::after,.top-right .status::before{animation:none!important}
+  *,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important}
+}
+/* Keep the existing light theme readable and visually distinct. */
+body[data-theme="light"] .container{
+  background:radial-gradient(ellipse at 50% -15%,rgba(76,164,220,.16),transparent 50%),linear-gradient(145deg,#f4f8ff,#eef2fa);
+}
+body[data-theme="light"] .container::before{opacity:.12}
+body[data-theme="light"] .topbar{background:rgba(244,248,255,.84);border-color:rgba(65,128,190,.18)}
+body[data-theme="light"] .hero{background:rgba(255,255,255,.72);border-color:rgba(65,128,190,.18)}
+body[data-theme="light"] .hero-title{background:linear-gradient(100deg,#172b48,#2778a8 55%,#7653b5);-webkit-background-clip:text;background-clip:text;color:transparent}
+body[data-theme="light"] .hero-subtitle{color:#5d6c80}
+body[data-theme="light"] .prompt-card{background:rgba(255,255,255,.86);color:#44546b;border-color:#d9e4f1}
+body[data-theme="light"] .prompt-card strong{color:#172b48}
+body[data-theme="light"] .assistant{background:rgba(255,255,255,.92);color:#202b3c;border-color:#d9e2ef}
+body[data-theme="light"] .user{background:#e4efff;color:#172b48;border-color:#cbdcf3}
+body[data-theme="light"] .composer-wrap{background:linear-gradient(to top,#f4f8ff 68%,rgba(244,248,255,.93) 86%,transparent)}
+body[data-theme="light"] .input-area{background:rgba(255,255,255,.96);border-color:#c7d9eb}
+body[data-theme="light"] #messageInput{color:#172b48}
+body[data-theme="light"] .history-drawer,body[data-theme="light"] .preferences-card{background:rgba(255,255,255,.98);color:#172b48}
+body[data-theme="light"] .history-item,body[data-theme="light"] .history-tool-btn{background:#f3f7fc;color:#263b55}
+body[data-theme="light"] .preferences-card select,body[data-theme="light"] .preferences-card textarea{background:#f7f9fd;color:#172b48}
+body[data-theme="ocean"] .brand-pill{border-color:rgba(54,198,211,.4);box-shadow:0 0 24px rgba(54,198,211,.13)}
+body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shadow:0 0 24px rgba(167,139,250,.13)}
+
 </style>
 </head>
 <body>
