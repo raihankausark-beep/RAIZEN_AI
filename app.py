@@ -304,6 +304,22 @@ def init_database():
                         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                     )
                 """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS raizen_user_memory (
+                        username_key TEXT PRIMARY KEY REFERENCES raizen_users(username_key) ON DELETE CASCADE,
+                        content TEXT NOT NULL DEFAULT '',
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS raizen_usage_events (
+                        id BIGSERIAL PRIMARY KEY,
+                        username_key TEXT NOT NULL REFERENCES raizen_users(username_key) ON DELETE CASCADE,
+                        event_type TEXT NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_raizen_usage_user_date ON raizen_usage_events(username_key, created_at DESC)")
                 cur.execute("DELETE FROM raizen_sessions WHERE expires_at < NOW()")
             conn.commit()
         migrate_legacy_users()
@@ -496,6 +512,11 @@ class ChatRequest(BaseModel):
     document_text: str = ""
     stream: bool = False
 
+
+
+class MemoryUpdateRequest(BaseModel):
+    token: str = ""
+    content: str = ""
 
 
 class FileRequest(BaseModel):
@@ -3950,7 +3971,116 @@ async def auth_check(token: str = ""):
     return {"ok": bool(username), "username": username or ""}
 
 
+def record_usage_event(username: str, event_type: str):
+    """Record minimal per-account product usage; never store prompt text."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO raizen_usage_events (username_key, event_type) VALUES (%s, %s)",
+                    (username.strip().lower(), event_type[:40])
+                )
+            conn.commit()
+    except Exception as error:
+        print("USAGE ANALYTICS NOTICE:", type(error).__name__)
+
+
+@app.get("/api/workspace/overview")
+async def workspace_overview(token: str = ""):
+    username = await asyncio.to_thread(get_authenticated_username, token)
+    if not username:
+        return JSONResponse({"error": "Please log in to view your workspace."}, status_code=401)
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) AS total FROM raizen_users")
+                total_users = int(cur.fetchone()["total"])
+                cur.execute("SELECT COUNT(*) AS total FROM raizen_sessions WHERE expires_at > NOW()")
+                active_sessions = int(cur.fetchone()["total"])
+                cur.execute(
+                    """SELECT COUNT(*) AS total FROM raizen_usage_events
+                       WHERE username_key = %s AND event_type = 'chat'
+                         AND created_at >= NOW() - INTERVAL '7 days'""",
+                    (username.strip().lower(),)
+                )
+                chats_7d = int(cur.fetchone()["total"])
+        return {
+            "ok": True,
+            "database": "connected",
+            "models": {
+                "chat": {"name": GEMINI_FAST_MODEL, "configured": bool(GEMINI_API_KEY)},
+                "vision": {"name": VISION_MODEL, "configured": bool(HF_TOKEN)},
+                "image_generation": {"name": IMAGE_MODEL, "configured": bool(HF_TOKEN)},
+                "image_editing": {"name": IMAGE_EDIT_MODEL, "configured": bool(HF_TOKEN)}
+            },
+            "platform": {"registered_accounts": total_users, "active_sessions": active_sessions},
+            "your_activity": {"chat_requests_last_7_days": chats_7d},
+            "features": {"research_workspace": True, "voice_assistant": True, "developer_studio": True, "smart_memory": True}
+        }
+    except Exception as error:
+        print("WORKSPACE OVERVIEW ERROR:", type(error).__name__)
+        return JSONResponse({"ok": False, "database": "unavailable", "message": "Workspace analytics are temporarily unavailable."}, status_code=503)
+
+
+@app.get("/api/memory")
+async def get_user_memory(token: str = ""):
+    username = await asyncio.to_thread(get_authenticated_username, token)
+    if not username:
+        return JSONResponse({"error": "Please log in to access saved memory."}, status_code=401)
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT content, updated_at FROM raizen_user_memory WHERE username_key = %s", (username.strip().lower(),))
+                row = cur.fetchone()
+        return {"ok": True, "content": row["content"] if row else "", "updated_at": row["updated_at"].isoformat() if row else None}
+    except Exception as error:
+        print("MEMORY READ ERROR:", type(error).__name__)
+        return JSONResponse({"error": "Saved memory is temporarily unavailable."}, status_code=503)
+
+
+@app.put("/api/memory")
+async def save_user_memory(request: MemoryUpdateRequest):
+    username = await asyncio.to_thread(get_authenticated_username, request.token)
+    if not username:
+        return JSONResponse({"error": "Please log in to save memory."}, status_code=401)
+    content = (request.content or "").strip()
+    if len(content) > 12000:
+        return JSONResponse({"error": "Memory notes must be 12,000 characters or fewer."}, status_code=413)
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO raizen_user_memory (username_key, content, updated_at)
+                       VALUES (%s, %s, NOW())
+                       ON CONFLICT (username_key) DO UPDATE
+                       SET content = EXCLUDED.content, updated_at = NOW()""",
+                    (username.strip().lower(), content)
+                )
+            conn.commit()
+        return {"ok": True, "characters": len(content)}
+    except Exception as error:
+        print("MEMORY SAVE ERROR:", type(error).__name__)
+        return JSONResponse({"error": "Could not save memory right now."}, status_code=503)
+
+
+@app.delete("/api/memory")
+async def clear_user_memory(token: str = ""):
+    username = await asyncio.to_thread(get_authenticated_username, token)
+    if not username:
+        return JSONResponse({"error": "Please log in to clear memory."}, status_code=401)
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM raizen_user_memory WHERE username_key = %s", (username.strip().lower(),))
+            conn.commit()
+        return {"ok": True}
+    except Exception as error:
+        print("MEMORY DELETE ERROR:", type(error).__name__)
+        return JSONResponse({"error": "Could not clear saved memory right now."}, status_code=503)
+
+
 @app.post("/upload")
+async def upload_file@app.post("/upload")
 async def upload_file(file: UploadFile = File(...), token: str = Form("")):
     if not get_authenticated_username(token):
         return {"error": "Please log in to upload documents."}
@@ -4072,6 +4202,7 @@ async def chat(request: ChatRequest):
     if not message:
         return {"reply": "Please enter a message."}
 
+    await asyncio.to_thread(record_usage_event, username, "chat")
     lower = message.lower()
 
     if (
