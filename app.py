@@ -1326,7 +1326,13 @@ button{color:inherit}
 #sendButton{width:43px;height:43px;flex:0 0 43px;border:0;border-radius:50%;background:#4b8df8;color:#fff;display:grid;place-items:center;cursor:pointer;font-size:21px;font-weight:700}
 #sendButton:hover{filter:brightness(1.08)}
 #sendButton:disabled{opacity:.45;cursor:not-allowed}
-.message-actions{display:flex;gap:8px;margin-top:8px}.message-action-btn{border:1px solid #333;background:#181818;color:#ddd;border-radius:10px;padding:6px 10px;font-size:12px;cursor:pointer}.message-action-btn:hover{background:#252525}.stop-btn{display:none;min-width:43px;border:0;border-radius:50%;background:#d9534f;color:#fff;font-size:16px;cursor:pointer}.stop-btn.active{display:grid;place-items:center}.stop-btn:hover{filter:brightness(1.08)}
+.message-actions{display:flex;gap:8px;margin-top:8px}.message-action-btn{border:1px solid #333;background:#181818;color:#ddd;border-radius:10px;padding:6px 10px;font-size:12px;cursor:pointer}.message-action-btn:hover{background:#252525}
+.message-action-btn.active{border-color:#6b9fff;background:#1d2b42;color:#fff}
+.message-action-btn:focus-visible,.code-copy-btn:focus-visible{outline:2px solid #79adff;outline-offset:2px}
+.message pre.code-block{position:relative;overflow:auto;margin:12px 0;padding:0;border:1px solid #30343b;border-radius:12px;background:#090b0f;white-space:pre}
+.code-block-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 11px;border-bottom:1px solid #30343b;background:#151922;color:#aab4c4;font:11px/1.3 system-ui,sans-serif}
+.code-copy-btn{border:1px solid #3a4352;border-radius:7px;padding:4px 8px;background:#202735;color:#e6edf7;font-size:11px;cursor:pointer}
+.message pre.code-block code{display:block;padding:12px 14px;color:#e6edf3;font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre;}.stop-btn{display:none;min-width:43px;border:0;border-radius:50%;background:#d9534f;color:#fff;font-size:16px;cursor:pointer}.stop-btn.active{display:grid;place-items:center}.stop-btn:hover{filter:brightness(1.08)}
 .composer-note{text-align:center;color:#6f6f6f;font-size:10px;margin-top:7px}
 
 /* Hidden/secondary controls */
@@ -1880,6 +1886,60 @@ function linkify(html) {
                 + cleanUrl + '</a>' + trailing;
         }
     );
+}
+
+function formatMessageText(text) {
+    let safe = escapeHtml(String(text || ""));
+    const codeBlocks = [];
+    safe = safe.replace(/```([a-zA-Z0-9_+#.-]*)[^\S\n]*\n([\s\S]*?)(?:```|$)/g, function(match, language, code) {
+        const index = codeBlocks.length;
+        const safeLanguage = (language || "code").replace(/[^a-zA-Z0-9_+#.-]/g, "") || "code";
+        codeBlocks.push({ language: safeLanguage, code: code });
+        return "RAIZEN_CODE_BLOCK_" + index + "_TOKEN";
+    });
+    safe = linkify(safe);
+    codeBlocks.forEach(function(block, index) {
+        const html = '<pre class="code-block"><div class="code-block-head"><span>' +
+            block.language + '</span><button type="button" class="code-copy-btn">Copy code</button></div><code>' +
+            block.code + '</code></pre>';
+        safe = safe.replace("RAIZEN_CODE_BLOCK_" + index + "_TOKEN", html);
+    });
+    return safe;
+}
+
+function attachCodeBlockActions(container) {
+    if (!container) return;
+    container.querySelectorAll(".code-copy-btn").forEach(function(button) {
+        if (button.dataset.bound === "1") return;
+        button.dataset.bound = "1";
+        button.addEventListener("click", async function() {
+            const code = button.closest(".code-block")?.querySelector("code")?.textContent || "";
+            const ok = await copyTextToClipboard(code);
+            button.textContent = ok ? "✓ Copied" : "Copy unavailable";
+            setTimeout(function() { button.textContent = "Copy code"; }, 1600);
+        });
+    });
+}
+
+async function copyTextToClipboard(text) {
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+        const temporary = document.createElement("textarea");
+        temporary.value = text;
+        temporary.setAttribute("readonly", "");
+        temporary.style.position = "fixed";
+        temporary.style.opacity = "0";
+        document.body.appendChild(temporary);
+        temporary.select();
+        const copied = document.execCommand("copy");
+        temporary.remove();
+        return !!copied;
+    } catch (error) {
+        return false;
+    }
 }
 
 function displayMessage(role, text, extraClass) {
@@ -2477,28 +2537,64 @@ window.sendMessage = async function sendMessage() {
         copy.textContent = "⧉ Copy";
         copy.setAttribute("aria-label", "Copy assistant response");
         copy.onclick = async function() {
-            try {
-                if (navigator.clipboard && window.isSecureContext) {
-                    await navigator.clipboard.writeText(reply);
-                } else {
-                    const temporary = document.createElement("textarea");
-                    temporary.value = reply;
-                    temporary.setAttribute("readonly", "");
-                    temporary.style.position = "fixed";
-                    temporary.style.opacity = "0";
-                    document.body.appendChild(temporary);
-                    temporary.select();
-                    const copied = document.execCommand("copy");
-                    temporary.remove();
-                    if (!copied) throw new Error("Clipboard unavailable");
-                }
-                copy.textContent = "✓ Copied";
-            } catch (copyError) {
-                copy.textContent = "Copy unavailable";
-            }
+            const ok = await copyTextToClipboard(reply);
+            copy.textContent = ok ? "✓ Copied" : "Copy unavailable";
             setTimeout(() => { copy.textContent = "⧉ Copy"; }, 1600);
         };
         actions.appendChild(copy);
+
+        const readAloud = document.createElement("button");
+        readAloud.className = "message-action-btn";
+        readAloud.type = "button";
+        readAloud.textContent = "🔊 Read aloud";
+        readAloud.setAttribute("aria-label", "Read assistant response aloud");
+        readAloud.onclick = function() {
+            if (!("speechSynthesis" in window)) {
+                readAloud.textContent = "Not supported";
+                return;
+            }
+            if (readAloud.dataset.speaking === "1") {
+                window.speechSynthesis.cancel();
+                readAloud.dataset.speaking = "0";
+                readAloud.textContent = "🔊 Read aloud";
+                return;
+            }
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(reply);
+            utterance.onend = utterance.onerror = function() {
+                readAloud.dataset.speaking = "0";
+                readAloud.textContent = "🔊 Read aloud";
+            };
+            readAloud.dataset.speaking = "1";
+            readAloud.textContent = "⏹ Stop reading";
+            window.speechSynthesis.speak(utterance);
+        };
+        actions.appendChild(readAloud);
+
+        const like = document.createElement("button");
+        like.className = "message-action-btn";
+        like.type = "button";
+        like.textContent = "👍";
+        like.title = "Helpful response";
+        like.setAttribute("aria-label", "Mark response helpful");
+        const dislike = document.createElement("button");
+        dislike.className = "message-action-btn";
+        dislike.type = "button";
+        dislike.textContent = "👎";
+        dislike.title = "Unhelpful response";
+        dislike.setAttribute("aria-label", "Mark response unhelpful");
+        like.onclick = function() {
+            const selected = like.classList.contains("active");
+            like.classList.toggle("active", !selected);
+            dislike.classList.remove("active");
+        };
+        dislike.onclick = function() {
+            const selected = dislike.classList.contains("active");
+            dislike.classList.toggle("active", !selected);
+            like.classList.remove("active");
+        };
+        actions.appendChild(like);
+        actions.appendChild(dislike);
 
         const regen = document.createElement("button");
         regen.className = "message-action-btn";
