@@ -4359,14 +4359,18 @@ async def admin_user_status(request: Request, body: AdminUserStatusRequest):
 
 
 @app.get("/creator-dashboard")
-async def creator_dashboard(token: str = ""):
-    username = get_authenticated_username(token)
-    if not username:
-        return {"ok": False, "message": "Authentication required."}
+async def creator_dashboard(request: Request, token: str = ""):
+    # A public username is not proof of creator/admin identity. Require the
+    # same verified Auth0 admin session used by the protected admin APIs.
+    if not is_admin_request(request):
+        return admin_denied()
 
-    creator_names = {"raihan", "raihankausar", "raihankausarkausar"}
-    if username.lower() not in creator_names:
-        return {"ok": False, "message": "Creator access denied."}
+    username = await asyncio.to_thread(get_authenticated_username, token)
+    if not username:
+        return JSONResponse(
+            {"ok": False, "message": "Authentication required."},
+            status_code=401
+        )
 
     try:
         with get_db_connection() as conn:
@@ -4377,7 +4381,7 @@ async def creator_dashboard(token: str = ""):
                 users = cur.fetchall()
         return {
             "ok": True,
-            "creator": "Raihan Kausar",
+            "creator": "RAIZEN Admin",
             "total_users": len(users),
             "users": [
                 {"username": user["username"], "created_at": user["created_at"].isoformat()}
@@ -4385,7 +4389,7 @@ async def creator_dashboard(token: str = ""):
             ]
         }
     except Exception as error:
-        print("CREATOR DASHBOARD ERROR:", error)
+        print("CREATOR DASHBOARD ERROR:", type(error).__name__)
         return {"ok": False, "message": "Could not load creator dashboard."}
 
 
