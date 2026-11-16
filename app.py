@@ -1395,6 +1395,12 @@ button{color:inherit}
 .activity-stat strong{display:block;color:#fff;font-size:27px;margin-top:6px}
 .workspace-card textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;min-height:190px}
 .history-match-snippet{font-size:11px;color:#8c9bb0;line-height:1.4;margin-top:6px;overflow-wrap:anywhere}
+.history-management-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px;align-items:center;margin:8px 0 12px}
+.history-management-row select{min-width:0;width:100%;background:#151515;color:#ddd;border:1px solid #303030;border-radius:9px;padding:8px;font-size:11px}
+.history-item-tools{flex-wrap:wrap;max-width:calc(100% - 18px)}
+.history-item{padding-bottom:52px}
+@media(max-width:420px){.history-management-row{grid-template-columns:1fr 1fr}.history-management-row select{grid-column:1/-1}.history-item-tools{gap:4px}.history-mini-btn{font-size:9px;padding:4px 6px}}
+body[data-theme="light"] .history-management-row select{background:#fff;color:#202635;border-color:#d9deea}
 body[data-theme="light"]{--bg:#f4f6fa;--panel:#fff;--panel2:#edf0f5;--text:#171923;--muted:#626b7b;--line:#d9deea;background:#f4f6fa;color:#171923}
 body[data-theme="light"] .container,body[data-theme="light"] .topbar{background:#f4f6fa;color:#171923}
 body[data-theme="light"] .brand-pill{background:#e4edff;color:#2459a8}
@@ -1471,6 +1477,14 @@ body[data-theme="violet"] #sendButton{background:#7853c6}
     </div>
     <div id="folderFilters" class="folder-filters"></div>
     <input id="historySearch" class="history-search" type="search" placeholder="Search your conversations..." aria-label="Search chat history" oninput="renderHistory()">
+    <div class="history-management-row">
+      <select id="historyTypeFilter" aria-label="Filter conversations" onchange="renderHistory()">
+        <option value="all">All conversations</option><option value="user">Contains my messages</option><option value="assistant">Contains RAIZEN replies</option><option value="pinned">Pinned only</option>
+      </select>
+      <button type="button" class="history-mini-btn" onclick="exportHistoryBackup()">⬇ Backup</button>
+      <button type="button" class="history-mini-btn" onclick="document.getElementById('historyImportInput').click()">⬆ Restore</button>
+      <input id="historyImportInput" type="file" accept="application/json,.json" hidden onchange="importHistoryBackup(event)">
+    </div>
     <div id="historyList"></div>
     <button class="clear-history-btn" onclick="clearAllHistory()">🗑️ Clear history</button>
   </div>
@@ -1903,11 +1917,16 @@ function renderHistory() {
     if (!savedChats.length) { list.innerHTML = '<div class="history-empty">No saved chats yet.</div>'; return; }
     const searchInput = document.getElementById("historySearch");
     const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
+    const typeFilter = document.getElementById("historyTypeFilter")?.value || "all";
     const chatsToShow = [...savedChats].sort((a,b) => Number(!!b.pinned)-Number(!!a.pinned) || b.updatedAt-a.updatedAt).filter(chat => {
         if (activeFolderFilter && (chat.folder || "") !== activeFolderFilter) return false;
+        const messages = Array.isArray(chat.messages) ? chat.messages : [];
+        if (typeFilter === "pinned" && !chat.pinned) return false;
+        if (typeFilter === "user" && !messages.some(message => message.role === "user")) return false;
+        if (typeFilter === "assistant" && !messages.some(message => message.role === "assistant")) return false;
         if (!query) return true;
         const title = (chat.title || "New Chat").toLowerCase();
-        const messageText = (Array.isArray(chat.messages) ? chat.messages : []).map(message => String(message.content || "")).join(" ").toLowerCase();
+        const messageText = messages.map(message => String(message.content || "")).join(" ").toLowerCase();
         return title.includes(query) || messageText.includes(query);
     });
     if (!chatsToShow.length) { list.innerHTML = '<div class="history-empty">No conversations in this view.</div>'; return; }
@@ -1924,10 +1943,92 @@ function renderHistory() {
         const tools = document.createElement("div"); tools.className = "history-item-tools";
         const pin = document.createElement("button"); pin.className = "history-mini-btn"; pin.textContent = chat.pinned ? "Unpin" : "📌 Pin"; pin.onclick = e => { e.stopPropagation(); togglePinChat(chat.id); };
         const move = document.createElement("button"); move.className = "history-mini-btn"; move.textContent = "📁 Folder"; move.onclick = e => { e.stopPropagation(); assignChatFolder(chat.id); };
-        tools.appendChild(pin); tools.appendChild(move);
+        const rename = document.createElement("button"); rename.className = "history-mini-btn"; rename.textContent = "✎ Rename"; rename.onclick = e => { e.stopPropagation(); renameChat(chat.id); };
+        const backup = document.createElement("button"); backup.className = "history-mini-btn"; backup.textContent = "⬇ Export"; backup.onclick = e => { e.stopPropagation(); exportSingleChat(chat.id); };
+        tools.appendChild(pin); tools.appendChild(move); tools.appendChild(rename); tools.appendChild(backup);
         item.appendChild(title); item.appendChild(date); if(chat.folder) item.appendChild(folder); if(match) item.appendChild(snippet); item.appendChild(del); item.appendChild(tools);
         item.onclick = () => openChat(chat.id); list.appendChild(item);
     });
+}
+
+function renameChat(id) {
+    const chat = savedChats.find(item => item.id === id);
+    if (!chat) return;
+    const nextTitle = prompt("Enter a new conversation title:", chat.title || "New Chat");
+    if (nextTitle === null) return;
+    const cleanTitle = nextTitle.trim().slice(0, 80);
+    if (!cleanTitle) { alert("A title cannot be empty."); return; }
+    chat.title = cleanTitle;
+    chat.updatedAt = Date.now();
+    saveChats();
+    renderHistory();
+}
+
+function downloadJsonFile(filename, data) {
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = filename;
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportSingleChat(id) {
+    const chat = savedChats.find(item => item.id === id);
+    if (!chat) return;
+    downloadJsonFile("raizen-chat-" + new Date(chat.updatedAt || Date.now()).toISOString().slice(0,10) + ".json", {
+        format: "raizen-chat-backup", version: 1, exportedAt: new Date().toISOString(), chats: [chat]
+    });
+}
+
+function exportHistoryBackup() {
+    if (!savedChats.length) { alert("There are no saved conversations to back up."); return; }
+    downloadJsonFile("raizen-history-backup-" + new Date().toISOString().slice(0,10) + ".json", {
+        format: "raizen-chat-backup", version: 1, exportedAt: new Date().toISOString(), chats: savedChats
+    });
+}
+
+function importHistoryBackup(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = "";
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) { alert("Backup file is too large. Maximum size is 10 MB."); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+        try {
+            const backup = JSON.parse(String(reader.result || ""));
+            if (!backup || backup.format !== "raizen-chat-backup" || !Array.isArray(backup.chats)) {
+                throw new Error("This is not a valid RAIZEN backup file.");
+            }
+            const imported = backup.chats.slice(0, 500).filter(chat =>
+                chat && typeof chat === "object" && Array.isArray(chat.messages)
+            ).map(chat => ({
+                id: String(chat.id || (Date.now().toString() + Math.random().toString(36).slice(2,8))),
+                title: String(chat.title || "Imported chat").slice(0, 80),
+                updatedAt: Number(chat.updatedAt) || Date.now(),
+                pinned: !!chat.pinned,
+                folder: String(chat.folder || "").slice(0, 40),
+                messages: chat.messages.slice(-100).filter(message =>
+                    message && (message.role === "user" || message.role === "assistant") && typeof message.content === "string"
+                ).map(message => ({role: message.role, content: message.content.slice(0, 120000)}))
+            })).filter(chat => chat.messages.length);
+            if (!imported.length) throw new Error("No valid conversations were found in this backup.");
+            const merged = new Map(savedChats.map(chat => [String(chat.id), chat]));
+            imported.forEach(chat => {
+                const existing = merged.get(chat.id);
+                if (existing) chat.id = "import-" + Date.now() + "-" + Math.random().toString(36).slice(2,8);
+                merged.set(chat.id, chat);
+            });
+            savedChats = [...merged.values()].sort((a,b) => b.updatedAt-a.updatedAt).slice(0,500);
+            saveChats();
+            renderHistory();
+            alert("Restored " + imported.length + " conversation(s). Your existing chats were kept.");
+        } catch (error) {
+            alert(error.message || "Could not restore this backup.");
+        }
+    };
+    reader.onerror = () => alert("Could not read the selected backup file.");
+    reader.readAsText(file);
 }
 
 let activeFolderFilter = "";
