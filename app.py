@@ -200,6 +200,8 @@ HF_TOKEN = (os.getenv("HF_TOKEN") or "").strip().strip('"').strip("'") or None
 # Google Gemini Developer API Free Tier Configuration
 GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip().strip('"').strip("'") or None
 GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or "gemini-3.8-flash").strip()
+# Low-latency model for everyday chat; keep the configured model as fallback.
+GEMINI_FAST_MODEL = (os.getenv("GEMINI_FAST_MODEL") or "gemini-3.5-flash-lite").strip()
 GEMINI_FREE_FALLBACK_MODELS = ["gemini-3.5-flash-lite"]
 GEMINI_OPENAI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 
@@ -207,8 +209,8 @@ GEMINI_OPENAI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/cha
 MODEL = GEMINI_MODEL
 FALLBACK_CHAT_MODELS = GEMINI_FREE_FALLBACK_MODELS
 
-MAX_CHAT_OUTPUT_TOKENS = 2000
-MAX_HISTORY_MESSAGES = 30
+MAX_CHAT_OUTPUT_TOKENS = 1400
+MAX_HISTORY_MESSAGES = 12
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
 MAX_DOCUMENT_CONTEXT_CHARS = 120000
@@ -592,7 +594,10 @@ def gemini_chat_completion(messages, max_tokens=MAX_CHAT_OUTPUT_TOKENS):
     if not GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY is not configured on the server.")
 
-    models_to_try = [GEMINI_MODEL] + [m for m in GEMINI_FREE_FALLBACK_MODELS if m != GEMINI_MODEL]
+    models_to_try = [GEMINI_FAST_MODEL] + [
+        m for m in [GEMINI_MODEL] + GEMINI_FREE_FALLBACK_MODELS
+        if m != GEMINI_FAST_MODEL
+    ]
     last_error = None
 
     for model_name in models_to_try:
@@ -1880,11 +1885,28 @@ function displayMessage(role, text, extraClass) {
     return div;
 }
 
-function updateMessage(div, text) {
+let pendingMessageDiv = null;
+let pendingMessageText = "";
+let messageUpdateFrame = null;
+
+function flushMessageUpdate() {
+    messageUpdateFrame = null;
+    const div = pendingMessageDiv;
+    const text = pendingMessageText;
+    pendingMessageDiv = null;
     if (!div) return;
     div.innerHTML = linkify(escapeHtml(text));
     const chat = document.getElementById("chat");
     if (chat) chat.scrollTop = chat.scrollHeight;
+}
+
+function updateMessage(div, text) {
+    if (!div) return;
+    pendingMessageDiv = div;
+    pendingMessageText = text;
+    if (messageUpdateFrame === null) {
+        messageUpdateFrame = requestAnimationFrame(flushMessageUpdate);
+    }
 }
 
 function usePrompt(text) {
@@ -2331,7 +2353,7 @@ window.sendMessage = async function sendMessage() {
                 body: JSON.stringify({
                     token: authToken,
                     message: message,
-                    history: chatHistory.slice(-30),
+                    history: chatHistory.slice(-12),
                     personality:
                         document.getElementById("personality").value,
                     response_style:
@@ -2402,6 +2424,11 @@ window.sendMessage = async function sendMessage() {
                 updateMessage(streamedMessage, reply);
             }
 
+            updateMessage(streamedMessage, reply);
+            if (messageUpdateFrame !== null) {
+                cancelAnimationFrame(messageUpdateFrame);
+                flushMessageUpdate();
+            }
             lastNormalAssistantMessage = streamedMessage;
         } else {
             const data = await response.json();
@@ -3290,11 +3317,20 @@ Uploaded document:
             "content": message
         })
 
+    chat_output_tokens = {
+        "Short": 600,
+        "Balanced": 1200,
+        "Detailed": 2000
+    }.get(request.response_style, MAX_CHAT_OUTPUT_TOKENS)
+
     if request.stream:
         def event_stream():
             stream_success = False
             last_stream_error = None
-            models_to_try = [GEMINI_MODEL] + [m for m in GEMINI_FREE_FALLBACK_MODELS if m != GEMINI_MODEL]
+            models_to_try = [GEMINI_FAST_MODEL] + [
+        m for m in [GEMINI_MODEL] + GEMINI_FREE_FALLBACK_MODELS
+        if m != GEMINI_FAST_MODEL
+    ]
 
             if not GEMINI_API_KEY:
                 yield "data: " + json.dumps({
@@ -3309,7 +3345,7 @@ Uploaded document:
                     payload = json.dumps({
                         "model": model_name,
                         "messages": messages,
-                        "max_tokens": MAX_CHAT_OUTPUT_TOKENS,
+                        "max_tokens": chat_output_tokens,
                         "stream": True,
                         "temperature": 0.7
                     }).encode("utf-8")
@@ -3405,7 +3441,7 @@ Uploaded document:
         )
 
     try:
-        reply = gemini_chat_completion(messages, MAX_CHAT_OUTPUT_TOKENS)
+        reply = gemini_chat_completion(messages, chat_output_tokens)
         if not reply:
             reply = "Sorry, I could not generate a response."
         return {"reply": reply}
