@@ -1300,7 +1300,12 @@ button{color:inherit}
 @keyframes messageIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 .user{margin-left:auto;margin-right:auto;background:#252525;border:1px solid #303030}
 .assistant{background:#111;border:1px solid #222}
-.thinking{opacity:.65}
+.thinking{opacity:.78;display:flex;align-items:center;gap:8px}
+.thinking::after{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:10px 0 0 var(--accent),20px 0 0 var(--accent);margin-left:18px;animation:thinkingPulse 1s infinite ease-in-out}
+@keyframes thinkingPulse{0%,100%{opacity:.35;transform:translateY(0)}50%{opacity:1;transform:translateY(-2px)}}
+.history-search{width:calc(100% - 24px);margin:10px 12px 8px;padding:11px 13px;border:1px solid #303030;border-radius:12px;background:#111;color:#f5f5f5;outline:none}
+.history-search:focus{border-color:#4d8dff;box-shadow:0 0 0 2px rgba(77,141,255,.14)}
+.history-search::placeholder{color:#777}
 .message a{color:#79adff;text-decoration:underline;word-break:break-all}
 .search-badge{display:inline-block;font-size:11px;padding:3px 7px;border:1px solid #444;border-radius:999px;opacity:.8;margin-bottom:5px}
 
@@ -1388,6 +1393,7 @@ button{color:inherit}
   <div id="historyDrawer" class="history-drawer">
     <div class="history-top"><strong>Chat history</strong><button onclick="toggleHistory()">✕</button></div>
     <button class="new-chat-history" onclick="newChat();toggleHistory()">＋ New chat</button>
+    <input id="historySearch" class="history-search" type="search" placeholder="Search your conversations..." aria-label="Search chat history" oninput="renderHistory()">
     <div id="historyList"></div>
     <button class="clear-history-btn" onclick="clearAllHistory()">🗑️ Clear history</button>
   </div>
@@ -1773,8 +1779,24 @@ function renderHistory() {
         list.innerHTML = '<div class="history-empty">No saved chats yet.</div>';
         return;
     }
-    savedChats.sort((a,b) => b.updatedAt - a.updatedAt);
-    savedChats.forEach(chat => {
+    const searchInput = document.getElementById("historySearch");
+    const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
+    const chatsToShow = [...savedChats]
+        .sort((a,b) => b.updatedAt - a.updatedAt)
+        .filter(chat => {
+            if (!query) return true;
+            const title = (chat.title || "New Chat").toLowerCase();
+            const messageText = (Array.isArray(chat.messages) ? chat.messages : [])
+                .map(message => String(message.content || ""))
+                .join(" ")
+                .toLowerCase();
+            return title.includes(query) || messageText.includes(query);
+        });
+    if (!chatsToShow.length) {
+        list.innerHTML = '<div class="history-empty">No conversations match that search.</div>';
+        return;
+    }
+    chatsToShow.forEach(chat => {
         const item = document.createElement("div");
         item.className = "history-item";
         const title = document.createElement("div");
