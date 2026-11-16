@@ -1942,13 +1942,16 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
 
   <main id="chat" class="chat">
     <section class="hero" id="heroPanel">
-      <div class="hero-title">What can I help with?</div>
+      <h1 class="hero-title">What can I help with?</h1>
       <div class="hero-subtitle">RAIZEN AI is your AI chatbot for clear answers, learning, coding, writing, web research, and working with files.</div>
       <div class="prompt-grid">
         <button class="prompt-card" onclick="usePrompt('Help me write or edit something')"><strong>✎ Write or edit</strong>Draft, rewrite, or improve</button>
         <button class="prompt-card" onclick="usePrompt('Explain this topic simply')"><strong>✦ Ask anything</strong>Get a clear explanation</button>
         <button class="prompt-card" onclick="usePrompt('Search the latest information about')"><strong>◎ Search the web</strong>Find current information</button>
         <button class="prompt-card" onclick="document.getElementById('fileInput').click()"><strong>＋ Add a file</strong>PDF, DOCX, TXT, or image</button>
+      </div>
+      <div class="hero-subtitle" style="margin:18px auto 0;font-size:12px">
+        <a href="https://github.com/raihankausark-beep/RAIZEN_AI" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;text-underline-offset:4px">Visit RAIZEN AI on GitHub</a>
       </div>
     </section>
     <div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>
