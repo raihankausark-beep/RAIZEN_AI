@@ -37,6 +37,95 @@ app.add_middleware(
     same_site="lax",
     https_only=True,
 )
+
+# Best-effort per-instance request throttling. Render currently runs one free instance;
+# limits reset on restart and should be backed by shared storage if scaled horizontally.
+_RATE_LIMITS = {
+    ("POST", "/register"): (3600, 5, "Too many registration attempts. Please try again later."),
+    ("POST", "/login"): (600, 10, "Too many login attempts. Please wait before trying again."),
+    ("GET", "/login"): (600, 10, "Too many sign-in attempts. Please wait before trying again."),
+    ("GET", "/callback"): (600, 20, "Too many authentication callbacks. Please try again."),
+    ("GET", "/auth/user"): (60, 60, "Too many authentication checks. Please slow down."),
+    ("POST", "/chat"): (60, 20, "You're sending messages too quickly. Please wait a moment."),
+    ("POST", "/upload"): (600, 8, "Too many document uploads. Please wait before uploading again."),
+    ("POST", "/vision"): (600, 6, "Too many image analysis requests. Please wait before trying again."),
+    ("POST", "/generate-image"): (600, 4, "Too many image generation requests. Please wait before trying again."),
+    ("POST", "/edit-image"): (600, 4, "Too many image editing requests. Please wait before trying again."),
+    ("PUT", "/api/memory"): (60, 30, "Too many memory updates. Please slow down."),
+    ("DELETE", "/api/memory"): (60, 30, "Too many memory updates. Please slow down."),
+    ("GET", "/admin/api/users"): (60, 30, "Too many admin requests. Please slow down."),
+    ("POST", "/admin/api/user-status"): (60, 20, "Too many admin updates. Please slow down."),
+}
+_RATE_LIMIT_BUCKETS = {}
+_RATE_LIMIT_LOCK = asyncio.Lock()
+
+@app.middleware("http")
+async def raizen_safety_middleware(request: Request, call_next):
+    method = request.method.upper()
+    path = request.url.path
+    client_host = request.client.host if request.client else "unknown"
+
+    # Reject clearly oversized multipart uploads before Starlette parses/spools the body.
+    content_length = request.headers.get("content-length")
+    if content_length and content_length.isdigit():
+        declared_size = int(content_length)
+        max_request_size = None
+        if method == "POST" and path == "/upload":
+            max_request_size = MAX_UPLOAD_BYTES + 1024 * 1024
+        elif method == "POST" and path in {"/vision", "/edit-image"}:
+            max_request_size = MAX_IMAGE_BYTES + 1024 * 1024
+        if max_request_size is not None and declared_size > max_request_size:
+            response = JSONResponse(
+                {"error": "Upload is too large. Please use a smaller file."},
+                status_code=413
+            )
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            return response
+
+    policy = _RATE_LIMITS.get((method, path))
+    if policy:
+        window_seconds, max_requests, message = policy
+        now = time.monotonic()
+        bucket_key = (client_host, method, path)
+        async with _RATE_LIMIT_LOCK:
+            recent = [stamp for stamp in _RATE_LIMIT_BUCKETS.get(bucket_key, []) if now - stamp < window_seconds]
+            if len(recent) >= max_requests:
+                retry_after = max(1, int(window_seconds - (now - recent[0])))
+                _RATE_LIMIT_BUCKETS[bucket_key] = recent
+                limited = True
+            else:
+                recent.append(now)
+                _RATE_LIMIT_BUCKETS[bucket_key] = recent
+                retry_after = 0
+                limited = False
+
+            # Keep the in-memory table bounded during bursts from many client IPs.
+            if len(_RATE_LIMIT_BUCKETS) > 10000:
+                cutoff = now - 3600
+                for old_key in list(_RATE_LIMIT_BUCKETS)[:2000]:
+                    kept = [stamp for stamp in _RATE_LIMIT_BUCKETS[old_key] if now - stamp < 3600]
+                    if kept:
+                        _RATE_LIMIT_BUCKETS[old_key] = kept
+                    else:
+                        _RATE_LIMIT_BUCKETS.pop(old_key, None)
+
+        if limited:
+            payload = {"ok": False, "message": message, "error": message, "detail": message}
+            if path == "/chat":
+                payload = {"reply": message}
+            response = JSONResponse(payload, status_code=429, headers={"Retry-After": str(retry_after)})
+        else:
+            response = await call_next(request)
+    else:
+        response = await call_next(request)
+
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(self), geolocation=()")
+    if request.url.scheme == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
 oauth = OAuth()
 @app.get("/login")
 async def auth0_login(request: Request):
@@ -4350,7 +4439,7 @@ async def clear_user_memory(token: str = ""):
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...), token: str = Form("")):
-    if not get_authenticated_username(token):
+    if not await asyncio.to_thread(get_authenticated_username, token):
         return {"error": "Please log in to upload documents."}
     filename = file.filename or "document"
     if not filename.lower().endswith((".pdf", ".docx", ".txt")):
@@ -4377,7 +4466,7 @@ async def upload_file(file: UploadFile = File(...), token: str = Form("")):
 
 @app.post("/vision")
 async def vision(file: UploadFile = File(...), question: str = Form(""), token: str = Form("")):
-    if not get_authenticated_username(token):
+    if not await asyncio.to_thread(get_authenticated_username, token):
         return {"error": "Please log in to use Vision."}
     filename = file.filename or "image"
     content_type = file.content_type or ""
@@ -4741,7 +4830,7 @@ class ImageRequest(BaseModel):
 
 @app.post("/generate-image")
 async def generate_image(request: ImageRequest):
-    if not get_authenticated_username(request.token):
+    if not await asyncio.to_thread(get_authenticated_username, request.token):
         return {"error": "Please log in to create images."}
     prompt = request.prompt.strip()
 
@@ -4788,7 +4877,7 @@ async def edit_image(
     prompt: str = Form(...),
     token: str = Form("")
 ):
-    if not get_authenticated_username(token):
+    if not await asyncio.to_thread(get_authenticated_username, token):
         return {"error": "Please log in to edit images."}
 
     prompt = prompt.strip()
