@@ -1948,7 +1948,7 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
         <a href="https://github.com/raihankausark-beep/RAIZEN_AI" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;text-underline-offset:4px">Visit RAIZEN AI on GitHub</a>
       </div>
     </section>
-    <div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>
+    
   </main>
 
   <div class="composer-wrap">
@@ -2940,6 +2940,24 @@ function openActivityDashboard() {
 }
 function closeActivityDashboard() { const modal=document.getElementById("activityModal"); if(modal){modal.classList.remove("open");modal.setAttribute("aria-hidden","true");} }
 
+function emptyChatInterfaceMarkup() {
+    return `
+        <section class="hero" id="heroPanel">
+          <h1 class="hero-title">What can I help with?</h1>
+          <div class="hero-subtitle">RAIZEN AI is your AI chatbot for clear answers, learning, coding, writing, web research, and working with files.</div>
+          <div class="prompt-grid">
+            <button class="prompt-card" onclick="usePrompt('Help me write or edit something')"><strong>✎ Write or edit</strong>Draft, rewrite, or improve</button>
+            <button class="prompt-card" onclick="usePrompt('Explain this topic simply')"><strong>✦ Ask anything</strong>Get a clear explanation</button>
+            <button class="prompt-card" onclick="usePrompt('Search the latest information about')"><strong>◎ Search the web</strong>Find current information</button>
+            <button class="prompt-card" onclick="document.getElementById('fileInput').click()"><strong>＋ Add a file</strong>PDF, DOCX, TXT, or image</button>
+          </div>
+          <div class="hero-subtitle" style="margin:18px auto 0;font-size:12px">
+            <a href="https://github.com/raihankausark-beep/RAIZEN_AI" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;text-underline-offset:4px">Visit RAIZEN AI on GitHub</a>
+          </div>
+        </section>
+    `;
+}
+
 function openChat(id) {
     const selected = savedChats.find(c => c.id === id);
     if (!selected) return;
@@ -2949,7 +2967,7 @@ function openChat(id) {
     const chat = document.getElementById("chat");
     chat.innerHTML = "";
     if (!chatHistory.length) {
-        chat.innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
+        chat.innerHTML = '';
     } else {
         chatHistory.forEach(item => displayMessage(item.role, item.content));
     }
@@ -2961,7 +2979,7 @@ function deleteChat(id) {
     if (currentChatId === id) {
         currentChatId = null;
         chatHistory = [];
-        document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
+        document.getElementById("chat").innerHTML = emptyChatInterfaceMarkup();
     }
     saveChats();
     renderHistory();
@@ -2982,7 +3000,7 @@ function clearAllHistory() {
     chatHistory = [];
     localStorage.removeItem("raizen_saved_chats_" + loggedInUsername.toLowerCase());
     localStorage.removeItem("raizen_chat_history_" + loggedInUsername.toLowerCase());
-    document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
+    document.getElementById("chat").innerHTML = '';
     renderHistory();
 }
 
@@ -3857,7 +3875,7 @@ function clearChat() {
     chatHistory = [];
     currentChatId = null;
     localStorage.removeItem("raizen_chat_history_" + loggedInUsername.toLowerCase());
-    document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
+    document.getElementById("chat").innerHTML = '';
     renderHistory();
 }
 
@@ -3865,7 +3883,7 @@ function newChat() {
     if (chatHistory.length) saveCurrentChat();
     chatHistory = [];
     currentChatId = null;
-    document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
+    document.getElementById("chat").innerHTML = '';
     const drawer = document.getElementById("historyDrawer");
     if (drawer && drawer.classList.contains("open")) drawer.classList.remove("open");
 }
