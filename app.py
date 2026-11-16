@@ -1210,6 +1210,11 @@ HTML = r"""
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
 <title>RAIZEN AI</title>
 <style>
 .account-wrap {
@@ -1767,6 +1772,8 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
       <button class="history-tool-btn" onclick="openCodeStudio()">⌘ Code Studio</button>
       <button class="history-tool-btn" onclick="openActivityDashboard()">▥ My Activity</button>
       <button class="history-tool-btn" onclick="openIntelligenceDashboard()">◈ Intelligence</button>
+      <button class="history-tool-btn" onclick="openSecurityCenter()">🛡 Security Center</button>
+      <button class="history-tool-btn" id="pwaInstallBtn" onclick="installRaizenApp()">＋ Install RAIZEN App</button>
       <button class="history-tool-btn" onclick="openResearchWorkspace()">▤ Research Workspace</button>
       <button class="history-tool-btn" onclick="openPromptLibrary()">✦ Prompt Library</button>
       <button class="history-tool-btn" onclick="openLearningMode()">🎓 Learning Mode</button>
@@ -1940,7 +1947,24 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
   </div>
 </div></div>
 
+<div id="securityModal" class="preferences-modal" aria-hidden="true">
+  <div class="preferences-card workspace-card" role="dialog" aria-modal="true" aria-labelledby="securityTitle">
+    <div class="preferences-heading"><strong id="securityTitle">🛡 RAIZEN Security Center</strong><button type="button" onclick="closeSecurityCenter()" aria-label="Close security center">✕</button></div>
+    <div class="system-grid">
+      <div class="activity-stat"><span>Connection</span><strong id="securityConnection">Checking…</strong></div>
+      <div class="activity-stat"><span>Sign-in session</span><strong id="securitySession">Checking…</strong></div>
+      <div class="activity-stat"><span>Application service</span><strong id="securityService">Checking…</strong></div>
+      <div class="activity-stat"><span>Database</span><strong id="securityDatabase">Checking…</strong></div>
+      <div class="activity-stat"><span>Account backup</span><strong id="securityBackup">Available</strong></div>
+    </div>
+    <p class="preferences-hint">Security checks show the current browser connection and service health. They are not a full penetration test or independent security audit.</p>
+    <p class="preferences-hint">Safety tips: use a unique password, sign out on shared devices, and keep your backup file private.</p>
+    <div class="preferences-actions"><button type="button" class="preferences-save" onclick="loadSecurityCenter()">↻ Refresh checks</button><button type="button" onclick="closeSecurityCenter()">Close</button></div>
+  </div>
+</div>
+
 <script>
+let deferredRaizenInstallPrompt = null;
 let authToken = "";
 let activeChatController = null;
 let activeThinkingMessage = null;
@@ -3706,6 +3730,55 @@ function loadChatHistory() {
     renderHistory();
 }
 window.addEventListener("DOMContentLoaded", checkLogin);
+function openSecurityCenter() {
+    const modal=document.getElementById("securityModal");
+    if(modal){modal.classList.add("open");modal.setAttribute("aria-hidden","false");}
+    loadSecurityCenter();
+}
+function closeSecurityCenter() {
+    const modal=document.getElementById("securityModal");
+    if(modal){modal.classList.remove("open");modal.setAttribute("aria-hidden","true");}
+}
+async function loadSecurityCenter() {
+    const secure=window.isSecureContext || location.hostname==="localhost";
+    document.getElementById("securityConnection").textContent=secure?"Secure context (HTTPS)":"Not using HTTPS";
+    document.getElementById("securitySession").textContent=authToken?"Signed-in session present":"Not signed in";
+    document.getElementById("securityService").textContent="Checking…";
+    document.getElementById("securityDatabase").textContent="Checking…";
+    try {
+        const response=await fetch("/health",{cache:"no-store"});
+        const data=await response.json();
+        document.getElementById("securityService").textContent=response.ok && data.status==="ok"?"Available":"Degraded";
+        document.getElementById("securityDatabase").textContent=data.database_connected?"Connected":"Unavailable";
+    } catch(error) {
+        document.getElementById("securityService").textContent="Unreachable";
+        document.getElementById("securityDatabase").textContent="Not verified";
+    }
+    document.getElementById("securityBackup").textContent="Export from History";
+}
+async function installRaizenApp() {
+    if(!deferredRaizenInstallPrompt) {
+        alert("If your browser supports installation, use its Install app option in the address bar or browser menu.");
+        return;
+    }
+    deferredRaizenInstallPrompt.prompt();
+    await deferredRaizenInstallPrompt.userChoice;
+    deferredRaizenInstallPrompt=null;
+}
+window.addEventListener("beforeinstallprompt",event=>{
+    event.preventDefault();
+    deferredRaizenInstallPrompt=event;
+    const button=document.getElementById("pwaInstallBtn");
+    if(button)button.textContent="＋ Install RAIZEN App";
+});
+window.addEventListener("appinstalled",()=>{
+    deferredRaizenInstallPrompt=null;
+    const button=document.getElementById("pwaInstallBtn");
+    if(button)button.textContent="✓ RAIZEN Installed";
+});
+window.addEventListener("DOMContentLoaded",()=>{
+    if("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(error=>console.warn("RAIZEN PWA registration:",error));
+});
 </script>
 
 </body>
@@ -4752,6 +4825,44 @@ async def edit_image(
         return {
             "error": f"Image editing failed: {type(error).__name__}: {str(error)[:400]}"
         }
+
+
+@app.get("/manifest.webmanifest")
+async def pwa_manifest():
+    return JSONResponse({
+        "name": "RAIZEN AI",
+        "short_name": "RAIZEN",
+        "description": "Your personal AI workspace",
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "background_color": "#05070d",
+        "theme_color": "#000000",
+        "icons": [{"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}]
+    })
+
+
+@app.get("/icon.svg")
+async def pwa_icon():
+    return Response(
+        content='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#05070d"/><path d="M256 64 304 196 448 256 304 316 256 448 208 316 64 256 208 196Z" fill="#39d8ff"/><circle cx="256" cy="256" r="42" fill="#a78bfa"/></svg>',
+        media_type="image/svg+xml"
+    )
+
+
+@app.get("/sw.js")
+async def pwa_service_worker():
+    worker = """self.addEventListener('install', event => self.skipWaiting());
+self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
+self.addEventListener('fetch', event => {
+  if (event.request.mode === 'navigate') {
+    event.respondWith(fetch(event.request).catch(() => new Response(
+      '<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><title>RAIZEN AI offline</title><body style="font:16px Arial;background:#05070d;color:#fff;padding:32px"><h2>RAIZEN AI</h2><p>You are offline. Reconnect to use your AI workspace.</p></body></html>',
+      {headers:{'Content-Type':'text/html; charset=utf-8'}}
+    )));
+  }
+});"""
+    return Response(content=worker, media_type="application/javascript", headers={"Cache-Control":"no-cache"})
 
 
 @app.get("/health")
