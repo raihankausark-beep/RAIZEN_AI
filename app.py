@@ -168,13 +168,6 @@ async def robots():
     return Response(
         content=f"""User-agent: *
 Allow: /
-Disallow: /admin
-Disallow: /creator-dashboard
-Disallow: /login
-Disallow: /logout
-Disallow: /callback
-Disallow: /auth-check
-Disallow: /api/
 
 Sitemap: {APP_BASE_URL}/sitemap.xml
 """,
