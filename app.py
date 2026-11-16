@@ -1309,6 +1309,7 @@ HTML = r"""
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="google-site-verification" content="WhBGh8iVPX33XrivJcISQXytsMDUOWUY1nk5eU52NHI" />
 <meta name="theme-color" content="#000000">
 <meta name="description" content="RAIZEN AI is an AI chatbot for asking questions, learning, coding, writing, web research, and working with documents. Explore the RAIZEN AI assistant.">
 <meta name="robots" content="index,follow,max-image-preview:large">
