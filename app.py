@@ -1762,6 +1762,8 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
       <button class="history-tool-btn" onclick="openPreferences()">⚙ Preferences</button>
       <button class="history-tool-btn" onclick="openCodeStudio()">⌘ Code Studio</button>
       <button class="history-tool-btn" onclick="openActivityDashboard()">▥ My Activity</button>
+      <button class="history-tool-btn" onclick="openIntelligenceDashboard()">◈ Intelligence</button>
+      <button class="history-tool-btn" onclick="openResearchWorkspace()">▤ Research Workspace</button>
       <button class="history-tool-btn" onclick="openPromptLibrary()">✦ Prompt Library</button>
       <button class="history-tool-btn" onclick="openLearningMode()">🎓 Learning Mode</button>
       <button class="history-tool-btn" onclick="cycleTheme()">◐ Change Theme</button>
@@ -1790,6 +1792,7 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
         <button class="prompt-card" onclick="usePrompt('Create a poster for Applied Mathematics')"><strong>▧ Create anything</strong>RAIZEN decides what to do</button>
         <button class="prompt-card" onclick="usePrompt('Search the latest AI news')"><strong>◎ Search the web</strong>Ask for current information</button>
         <button class="prompt-card" onclick="document.getElementById('fileInput').click()"><strong>＋ Attach</strong>Add a PDF, DOCX, TXT, or image</button>
+        <button class="prompt-card" onclick="openResearchWorkspace()"><strong>▤ Research</strong>Explore a document</button>
         <button class="prompt-card" onclick="usePrompt('What is the weather in Cuttack today?')"><strong>☼ Weather</strong>Ask about live conditions</button>
         <button class="prompt-card" onclick="usePrompt('Explain this topic simply')"><strong>⚡ Ask anything</strong>No special mode needed</button>
       </div>
@@ -1827,6 +1830,7 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
         <button type="button" id="stopButton" class="stop-btn" aria-label="Stop generating" title="Stop generating" onclick="stopGeneration()">■</button>
         <button type="button" id="sendButton" aria-label="Send" onclick="window.sendMessage()">↑</button>
       </div>
+      <div id="voiceAssistantStatus" class="voice-live" aria-live="polite"></div>
       <div class="composer-note">RAIZEN • One prompt. Just ask. RAIZEN decides what to do.</div>
     </div>
   </div>
@@ -1856,9 +1860,11 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
     <label for="codeTask">What should RAIZEN do?</label>
     <select id="codeTask"><option value="debug">Debug this code and explain the errors</option><option value="explain">Explain this code step by step</option><option value="optimize">Improve readability and efficiency</option><option value="write">Help me complete or write this code</option><option value="review">Review this code for correctness and edge cases</option></select>
     <label for="codeInput">Paste your code or describe the problem</label>
-    <textarea id="codeInput" rows="10" spellcheck="false" placeholder="Paste your code here..."></textarea>
-    <p class="preferences-hint">RAIZEN will review the code and reply in chat. Code Studio does not execute code on the server.</p>
-    <div class="preferences-actions"><button type="button" onclick="document.getElementById('codeInput').value=''">Clear</button><button type="button" class="preferences-save" onclick="sendCodeStudioTask()">Send to RAIZEN</button></div>
+    <textarea id="codeInput" rows="12" spellcheck="false" oninput="updateCodeMetrics()" placeholder="Paste your code here..."></textarea>
+    <div class="code-metrics"><span id="codeLineCount">0 lines</span><span id="codeCharCount">0 characters</span></div>
+    <div class="code-actions"><button type="button" onclick="copyStudioCode()">Copy code</button><button type="button" onclick="downloadStudioCode()">Download file</button><button type="button" onclick="document.getElementById('codeInput').value='';updateCodeMetrics()">Clear editor</button></div>
+    <p class="preferences-hint">RAIZEN reviews and explains code in chat. Code Studio does not execute untrusted code on the server.</p>
+    <div class="preferences-actions"><button type="button" class="preferences-save" onclick="sendCodeStudioTask()">Send to RAIZEN</button></div>
   </div>
 </div>
 <div id="promptLibraryModal" class="preferences-modal" aria-hidden="true">
@@ -1901,7 +1907,34 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
     </div>
     <p class="preferences-hint">These figures are calculated from conversations saved in this browser. They are not server-wide usage analytics.</p>
   </div>
+<div id="intelligenceModal" class="preferences-modal" aria-hidden="true">
+  <div class="preferences-card workspace-card" role="dialog" aria-modal="true" aria-labelledby="intelligenceTitle">
+    <div class="preferences-heading"><strong id="intelligenceTitle">◈ RAIZEN Intelligence Center</strong><button type="button" onclick="closeIntelligenceDashboard()" aria-label="Close intelligence dashboard">✕</button></div>
+    <div class="system-grid">
+      <div class="activity-stat"><span>Database</span><strong id="systemDatabase">Checking…</strong></div>
+      <div class="activity-stat"><span>Chat requests · 7 days</span><strong id="systemChats">—</strong></div>
+      <div class="activity-stat"><span>Registered accounts</span><strong id="systemUsers">—</strong></div>
+      <div class="activity-stat"><span>Active sessions</span><strong id="systemSessions">—</strong></div>
+    </div>
+    <div id="systemModels" class="system-models"><p class="preferences-hint">Checking configured AI services…</p></div>
+    <p class="preferences-hint">Usage counts are account-level request totals, not message content. Model status reflects server configuration, not guaranteed provider uptime.</p>
+    <div class="preferences-actions"><button type="button" onclick="loadIntelligenceDashboard()">↻ Refresh status</button></div>
+  </div>
 </div>
+<div id="researchWorkspaceModal" class="preferences-modal" aria-hidden="true">
+  <div class="preferences-card workspace-card" role="dialog" aria-modal="true" aria-labelledby="researchWorkspaceTitle">
+    <div class="preferences-heading"><strong id="researchWorkspaceTitle">▤ RAIZEN Research Workspace</strong><button type="button" onclick="closeResearchWorkspace()" aria-label="Close research workspace">✕</button></div>
+    <div class="research-document-card">
+      <strong id="researchDocumentName">No document loaded</strong>
+      <span id="researchDocumentMeta">Upload a PDF, DOCX or TXT file to begin.</span>
+      <button type="button" class="history-tool-btn" onclick="document.getElementById('fileInput').click()">＋ Upload / replace document</button>
+    </div>
+    <label for="researchQuestion">What would you like to investigate?</label>
+    <textarea id="researchQuestion" rows="4" placeholder="Summarize this document, extract key findings, compare sections, or answer a question with evidence…"></textarea>
+    <div class="preferences-actions"><button type="button" onclick="document.getElementById('researchQuestion').value=''">Clear</button><button type="button" class="preferences-save" onclick="sendResearchQuestion()">Ask RAIZEN</button></div>
+    <p class="preferences-hint">Answers use the currently uploaded document as context. Files are processed for the current session and are not permanently archived by this workspace.</p>
+  </div>
+</div></div>
 
 <script>
 let authToken = "";
@@ -2140,6 +2173,7 @@ document.getElementById("fileInput").addEventListener("change", async function()
 
         document.getElementById("fileName").textContent =
             "📄 " + documentName + " ready";
+        refreshResearchWorkspace();
 
         displayMessage(
             "assistant",
@@ -2383,7 +2417,7 @@ function exportCurrentChat(format) {
     printWindow.document.write("<!doctype html><html><head><title>RAIZEN conversation</title><style>body{font:14px/1.6 Arial,sans-serif;max-width:850px;margin:40px auto;padding:0 24px;color:#171717}h1{font-size:22px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 Arial,sans-serif}@media print{body{margin:15mm auto}}</style></head><body><h1>RAIZEN — " + escapeHtml(title) + "</h1><pre>" + escaped + "</pre></body></html>");
     printWindow.document.close(); printWindow.onload = () => printWindow.print();
 }
-function openPreferences() {
+async function openPreferences() {
     const key = loggedInUsername.toLowerCase(); const modal = document.getElementById("preferencesModal");
     document.getElementById("savedPersonality").value = localStorage.getItem("raizen_personality_" + key) || "Friendly";
     document.getElementById("savedResponseStyle").value = localStorage.getItem("raizen_response_style_" + key) || "Balanced";
@@ -2392,21 +2426,45 @@ function openPreferences() {
     if (instructions === null) instructions = localStorage.getItem("raizen_custom_instructions") || "";
     document.getElementById("customInstructions").value = instructions;
     if (modal) { modal.classList.add("open"); modal.setAttribute("aria-hidden","false"); }
+    try {
+        const response = await fetch("/api/memory?token=" + encodeURIComponent(authToken));
+        const data = await response.json();
+        if (response.ok && data.ok) {
+            document.getElementById("memoryNotes").value = data.content || "";
+            localStorage.setItem("raizen_memory_notes_" + key, data.content || "");
+        }
+    } catch (error) { console.warn("Cloud memory unavailable; keeping local notes.", error); }
 }
 function closePreferences() { const modal = document.getElementById("preferencesModal"); if(modal){modal.classList.remove("open");modal.setAttribute("aria-hidden","true");} }
-function savePreferences() {
+async function savePreferences() {
     const key = loggedInUsername.toLowerCase();
+    const memoryContent = document.getElementById("memoryNotes").value.trim();
+    if (memoryContent.length > 12000) { alert("Keep saved memory under 12,000 characters."); return; }
     localStorage.setItem("raizen_personality_" + key,document.getElementById("savedPersonality").value);
     localStorage.setItem("raizen_response_style_" + key,document.getElementById("savedResponseStyle").value);
-    localStorage.setItem("raizen_memory_notes_" + key,document.getElementById("memoryNotes").value.trim());
+    localStorage.setItem("raizen_memory_notes_" + key,memoryContent);
     localStorage.setItem("raizen_custom_instructions_" + key,document.getElementById("customInstructions").value.trim());
     document.getElementById("personality").value=document.getElementById("savedPersonality").value;
     document.getElementById("responseStyle").value=document.getElementById("savedResponseStyle").value;
-    closePreferences(); alert("Your RAIZEN preferences have been saved in this browser.");
+    try {
+        const response = await fetch("/api/memory", {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:authToken,content:memoryContent})});
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || "Cloud memory save failed.");
+        closePreferences(); alert("Preferences and account-synced memory saved successfully.");
+    } catch (error) {
+        closePreferences(); alert("Preferences saved in this browser. Cloud memory could not sync: " + error.message);
+    }
 }
-function clearPersonalMemory() {
-    if (!confirm("Clear your saved RAIZEN notes for this browser account?")) return;
-    document.getElementById("memoryNotes").value=""; localStorage.removeItem("raizen_memory_notes_" + loggedInUsername.toLowerCase());
+async function clearPersonalMemory() {
+    if (!confirm("Clear your saved RAIZEN notes from this account on all devices?")) return;
+    document.getElementById("memoryNotes").value="";
+    localStorage.removeItem("raizen_memory_notes_" + loggedInUsername.toLowerCase());
+    try {
+        const response = await fetch("/api/memory?token=" + encodeURIComponent(authToken), {method:"DELETE"});
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || "Could not clear cloud memory.");
+        alert("Saved memory cleared from this account.");
+    } catch (error) { alert("Local notes cleared. Cloud memory could not be cleared: " + error.message); }
 }
 function loadPreferences() {
     const key=loggedInUsername.toLowerCase();
@@ -2421,10 +2479,21 @@ function toggleVoiceInput() {
     if(window.raizenRecognition){window.raizenRecognition.stop();window.raizenRecognition=null;if(button)button.textContent="🎙";return;}
     const recognition=new SpeechRecognition(); window.raizenRecognition=recognition; recognition.lang=navigator.language||"en-IN"; recognition.interimResults=true; recognition.continuous=false;
     if(button)button.textContent="⏹";
-    recognition.onresult=event=>{let transcript="";for(let i=event.resultIndex;i<event.results.length;i++)transcript+=event.results[i][0].transcript;document.getElementById("messageInput").value=transcript;};
-    recognition.onerror=()=>{if(button)button.textContent="🎙";window.raizenRecognition=null;};
-    recognition.onend=()=>{if(button)button.textContent="🎙";window.raizenRecognition=null;document.getElementById("messageInput").focus();};
-    try{recognition.start();}catch(error){window.raizenRecognition=null;if(button)button.textContent="🎙";alert("Could not start voice input. Check microphone permission.");}
+    const status=document.getElementById("voiceAssistantStatus");
+    if(status)status.textContent="Listening…";
+    recognition.onresult=event=>{
+        let transcript="";
+        for(let i=0;i<event.results.length;i++)transcript+=event.results[i][0].transcript;
+        document.getElementById("messageInput").value=transcript;
+    };
+    recognition.onerror=()=>{if(button)button.textContent="🎙";window.raizenRecognition=null;if(status)status.textContent="Microphone unavailable. Check browser permission.";};
+    recognition.onend=()=>{
+        if(button)button.textContent="🎙";window.raizenRecognition=null;document.getElementById("messageInput").focus();
+        const textToSend=document.getElementById("messageInput").value.trim();
+        if(raizenVoiceMode && textToSend){if(status)status.textContent="Sending your voice message…";window.sendMessage();}
+        else if(status)status.textContent=textToSend?"Voice captured. Press Send when ready.":"";
+    };
+    try{recognition.start();}catch(error){window.raizenRecognition=null;if(button)button.textContent="🎙";if(status)status.textContent="Could not start microphone.";alert("Could not start voice input. Check microphone permission.");}
 }
 
 let raizenVoiceMode = false;
@@ -2443,6 +2512,8 @@ function toggleVoiceMode() {
     raizenVoiceMode=!raizenVoiceMode;
     localStorage.setItem("raizen_voice_mode_"+loggedInUsername.toLowerCase(),raizenVoiceMode?"on":"off");
     updateVoiceModeButton();
+    const status=document.getElementById("voiceAssistantStatus");
+    if(status)status.textContent=raizenVoiceMode?"Hands-free voice mode is on. Tap the microphone and speak.":"Voice mode is off.";
     if(!raizenVoiceMode && "speechSynthesis" in window) window.speechSynthesis.cancel();
     if(raizenVoiceMode) speakRaizenReply("Voice mode is on. New replies will be read aloud.");
 }
@@ -2467,6 +2538,30 @@ function cycleTheme() {
 }
 function openCodeStudio() { const modal=document.getElementById("codeStudioModal"); if(modal){modal.classList.add("open");modal.setAttribute("aria-hidden","false");} }
 function closeCodeStudio() { const modal=document.getElementById("codeStudioModal"); if(modal){modal.classList.remove("open");modal.setAttribute("aria-hidden","true");} }
+function updateCodeMetrics() {
+    const code = document.getElementById("codeInput")?.value || "";
+    const lines = code ? code.split(/\\r?\\n/).length : 0;
+    const lineLabel = document.getElementById("codeLineCount");
+    const charLabel = document.getElementById("codeCharCount");
+    if (lineLabel) lineLabel.textContent = lines + (lines === 1 ? " line" : " lines");
+    if (charLabel) charLabel.textContent = code.length.toLocaleString() + " characters";
+}
+async function copyStudioCode() {
+    const code = document.getElementById("codeInput").value;
+    if (!code) { alert("The editor is empty."); return; }
+    try { await navigator.clipboard.writeText(code); alert("Code copied."); }
+    catch (error) { alert("Clipboard access is unavailable in this browser."); }
+}
+function downloadStudioCode() {
+    const code = document.getElementById("codeInput").value;
+    if (!code) { alert("The editor is empty."); return; }
+    const language = document.getElementById("codeLanguage").value;
+    const extensions = {"C":"c","C++":"cpp","Python":"py","Java":"java","JavaScript":"js","HTML/CSS":"html","SQL":"sql"};
+    const ext = extensions[language] || "txt";
+    const blob = new Blob([code], {type:"text/plain;charset=utf-8"});
+    const url = URL.createObjectURL(blob); const link = document.createElement("a");
+    link.href=url; link.download="raizen-code." + ext; link.click(); URL.revokeObjectURL(url);
+}
 function sendCodeStudioTask() {
     const language=document.getElementById("codeLanguage").value, task=document.getElementById("codeTask").value, code=document.getElementById("codeInput").value.trim();
     if(!code){alert("Paste your code or describe the coding problem first.");return;}
@@ -2554,6 +2649,57 @@ function startLearningSession() {
     closeLearningMode();document.getElementById("personality").value="Teacher";document.getElementById("responseStyle").value="Detailed";usePrompt(prompt);window.sendMessage();
 }
 
+function openIntelligenceDashboard() {
+    const modal=document.getElementById("intelligenceModal");
+    if(modal){modal.classList.add("open");modal.setAttribute("aria-hidden","false");}
+    loadIntelligenceDashboard();
+}
+function closeIntelligenceDashboard() { const modal=document.getElementById("intelligenceModal");if(modal){modal.classList.remove("open");modal.setAttribute("aria-hidden","true");} }
+async function loadIntelligenceDashboard() {
+    const db=document.getElementById("systemDatabase"); if(db)db.textContent="Checking…";
+    const models=document.getElementById("systemModels"); if(models)models.innerHTML="<p class='preferences-hint'>Checking configured AI services…</p>";
+    try {
+        const response=await fetch("/api/workspace/overview?token="+encodeURIComponent(authToken));
+        const data=await response.json();
+        if(!response.ok || !data.ok)throw new Error(data.message||data.error||"Could not load workspace metrics.");
+        document.getElementById("systemDatabase").textContent=data.database==="connected"?"Connected":"Unavailable";
+        document.getElementById("systemChats").textContent=String(data.your_activity.chat_requests_last_7_days);
+        document.getElementById("systemUsers").textContent=String(data.platform.registered_accounts);
+        document.getElementById("systemSessions").textContent=String(data.platform.active_sessions);
+        const labels=[["Chat",data.models.chat],["Vision",data.models.vision],["Image generation",data.models.image_generation],["Image editing",data.models.image_editing]];
+        models.innerHTML="";
+        labels.forEach(([label,model])=>{
+            const row=document.createElement("div");row.className="system-model-row";
+            const name=document.createElement("span");name.textContent=label;
+            const value=document.createElement("strong");value.textContent=model.configured?"Configured · "+model.name:"Not configured";value.className=model.configured?"system-ok":"system-off";
+            row.append(name,value);models.appendChild(row);
+        });
+    } catch(error) {
+        if(db)db.textContent="Unavailable";
+        if(models)models.textContent=error.message;
+    }
+}
+function openResearchWorkspace() {
+    const modal=document.getElementById("researchWorkspaceModal");
+    if(modal){modal.classList.add("open");modal.setAttribute("aria-hidden","false");}
+    refreshResearchWorkspace();
+}
+function closeResearchWorkspace() { const modal=document.getElementById("researchWorkspaceModal");if(modal){modal.classList.remove("open");modal.setAttribute("aria-hidden","true");} }
+function refreshResearchWorkspace() {
+    const name=document.getElementById("researchDocumentName"),meta=document.getElementById("researchDocumentMeta");
+    if(name)name.textContent=documentName||"No document loaded";
+    if(meta)meta.textContent=documentText?documentText.length.toLocaleString()+" extracted characters · Ready for document Q&A":"Upload a PDF, DOCX or TXT file to begin.";
+}
+function sendResearchQuestion() {
+    const question=document.getElementById("researchQuestion").value.trim();
+    if(!documentText){alert("Upload a PDF, DOCX or TXT document first.");return;}
+    if(!question){alert("Enter a research question first.");return;}
+    closeResearchWorkspace();
+    document.getElementById("personality").value="Teacher";
+    document.getElementById("responseStyle").value="Detailed";
+    usePrompt("Use the uploaded document as your primary source. Answer this research request: "+question+" Cite section headings or quote short relevant phrases when available. Clearly state when the document does not contain the answer.");
+    window.sendMessage();
+}
 function openActivityDashboard() {
     const chats=Array.isArray(savedChats)?savedChats:[];
     const messages=chats.reduce((sum,chat)=>sum+(Array.isArray(chat.messages)?chat.messages.length:0),0);
@@ -3707,6 +3853,28 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:13px 14p
 .empty{text-align:center;color:#777;padding:35px}
 #status{color:#999;font-size:12px}
 @media(max-width:700px){.grid{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}table{min-width:760px}.table-card{overflow-x:auto}}
+/* Integrated six-module expansion */
+.system-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0}
+.system-models{display:grid;gap:8px;margin-top:12px}
+.system-model-row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px 12px;border:1px solid rgba(125,160,205,.2);border-radius:12px;background:rgba(90,130,190,.07);font-size:12px}
+.system-model-row strong{overflow-wrap:anywhere;text-align:right}
+.system-ok{color:#54d69a}.system-off{color:#f0b56b}
+.research-document-card{display:grid;gap:7px;padding:14px;border:1px solid rgba(125,160,205,.24);border-radius:14px;margin:12px 0;background:rgba(90,130,190,.07)}
+.research-document-card span{font-size:12px;color:var(--muted,#9aa8ba)}
+.code-metrics{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;color:var(--muted,#9aa8ba);font-size:11px;margin:6px 0 10px}
+.code-actions{display:flex;gap:7px;flex-wrap:wrap;margin:6px 0}
+.code-actions button{border:1px solid #34465f;background:rgba(60,100,150,.12);color:inherit;border-radius:9px;padding:7px 10px;cursor:pointer}
+.voice-live{font-size:11px;color:#55d6a0;min-height:16px;text-align:center}
+@media(max-width:640px){
+ .system-grid{grid-template-columns:1fr 1fr;gap:7px}
+ .system-model-row{font-size:11px;padding:9px}
+ .workspace-card{width:min(100% - 18px,620px);max-height:88dvh;overflow-y:auto;padding:16px}
+ .code-actions button{flex:1}
+ .research-document-card .history-tool-btn{width:100%}
+ .composer-note{font-size:10px}
+ .history-tools{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:380px){.system-grid{grid-template-columns:1fr}.input-area{gap:5px}}
 </style>
 </head>
 <body>
