@@ -1395,6 +1395,18 @@ button{color:inherit}
 .activity-stat strong{display:block;color:#fff;font-size:27px;margin-top:6px}
 .workspace-card textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;min-height:190px}
 .history-match-snippet{font-size:11px;color:#8c9bb0;line-height:1.4;margin-top:6px;overflow-wrap:anywhere}
+.prompt-library-list{display:flex;flex-direction:column;gap:8px;max-height:240px;overflow:auto;margin:10px 0}
+.prompt-library-item{background:#191919;border:1px solid #303030;border-radius:12px;padding:11px}
+.prompt-library-item strong{display:block;font-size:13px;color:var(--text,#fff)}
+.prompt-library-item p{font-size:11px;line-height:1.45;color:#999;white-space:pre-wrap;overflow-wrap:anywhere;max-height:70px;overflow:auto;margin:6px 0}
+.prompt-library-actions{display:flex;gap:6px;flex-wrap:wrap}
+.prompt-library-actions button{border:1px solid #383838;background:#242424;color:#ddd;border-radius:8px;padding:6px 10px;font-size:11px;cursor:pointer}
+#promptSearch,#promptTitleInput{width:100%;background:#191919;color:#fff;border:1px solid #333;border-radius:10px;padding:10px}
+body[data-theme="light"] .prompt-library-item{background:#f3f5f9;border-color:#d9deea}
+body[data-theme="light"] .prompt-library-item strong{color:#171923}
+body[data-theme="light"] .prompt-library-actions button{background:#fff;color:#202635;border-color:#d9deea}
+body[data-theme="light"] #promptSearch,body[data-theme="light"] #promptTitleInput{background:#fff;color:#171923;border-color:#d9deea}
+
 .history-management-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px;align-items:center;margin:8px 0 12px}
 .history-management-row select{min-width:0;width:100%;background:#151515;color:#ddd;border:1px solid #303030;border-radius:9px;padding:8px;font-size:11px}
 .history-item-tools{flex-wrap:wrap;max-width:calc(100% - 18px)}
@@ -1472,6 +1484,8 @@ body[data-theme="violet"] #sendButton{background:#7853c6}
       <button class="history-tool-btn" onclick="openPreferences()">⚙ Preferences</button>
       <button class="history-tool-btn" onclick="openCodeStudio()">⌘ Code Studio</button>
       <button class="history-tool-btn" onclick="openActivityDashboard()">▥ My Activity</button>
+      <button class="history-tool-btn" onclick="openPromptLibrary()">✦ Prompt Library</button>
+      <button class="history-tool-btn" onclick="openLearningMode()">🎓 Learning Mode</button>
       <button class="history-tool-btn" onclick="cycleTheme()">◐ Change Theme</button>
       <button class="history-tool-btn" id="voiceModeButton" onclick="toggleVoiceMode()">🔊 Voice Mode: Off</button>
     </div>
@@ -1567,6 +1581,35 @@ body[data-theme="violet"] #sendButton{background:#7853c6}
     <textarea id="codeInput" rows="10" spellcheck="false" placeholder="Paste your code here..."></textarea>
     <p class="preferences-hint">RAIZEN will review the code and reply in chat. Code Studio does not execute code on the server.</p>
     <div class="preferences-actions"><button type="button" onclick="document.getElementById('codeInput').value=''">Clear</button><button type="button" class="preferences-save" onclick="sendCodeStudioTask()">Send to RAIZEN</button></div>
+  </div>
+</div>
+<div id="promptLibraryModal" class="preferences-modal" aria-hidden="true">
+  <div class="preferences-card workspace-card" role="dialog" aria-modal="true" aria-labelledby="promptLibraryTitle">
+    <div class="preferences-heading"><strong id="promptLibraryTitle">✦ RAIZEN Prompt Library</strong><button type="button" onclick="closePromptLibrary()" aria-label="Close prompt library">✕</button></div>
+    <label for="promptSearch">Find a saved prompt</label>
+    <input id="promptSearch" type="search" placeholder="Search your prompt library..." oninput="renderPromptLibrary()">
+    <div id="promptLibraryList" class="prompt-library-list"></div>
+    <label for="promptTitleInput">Prompt name</label>
+    <input id="promptTitleInput" type="text" maxlength="60" placeholder="e.g. Explain a C programming topic">
+    <label for="promptBodyInput">Prompt text</label>
+    <textarea id="promptBodyInput" rows="4" placeholder="Write a reusable prompt..."></textarea>
+    <div class="preferences-actions"><button type="button" onclick="clearPromptEditor()">Clear</button><button type="button" class="preferences-save" onclick="saveLibraryPrompt()">Save prompt</button></div>
+    <p class="preferences-hint">Prompts are saved in this browser for your account. Select Use to place a prompt in the chat box.</p>
+  </div>
+</div>
+<div id="learningModeModal" class="preferences-modal" aria-hidden="true">
+  <div class="preferences-card workspace-card" role="dialog" aria-modal="true" aria-labelledby="learningModeTitle">
+    <div class="preferences-heading"><strong id="learningModeTitle">🎓 RAIZEN Learning Mode</strong><button type="button" onclick="closeLearningMode()" aria-label="Close learning mode">✕</button></div>
+    <label for="learningTopic">What do you want to learn?</label>
+    <textarea id="learningTopic" rows="3" placeholder="Enter a topic, question, or paste a syllabus point..."></textarea>
+    <label for="learningApproach">Learning activity</label>
+    <select id="learningApproach"><option value="teach">Teach me step by step</option><option value="practice">Give me practice questions</option><option value="quiz">Take an interactive-style quiz one question at a time</option><option value="revision">Make concise revision notes</option><option value="exam">Prepare an exam-focused answer with examples</option></select>
+    <label for="learningLevel">Difficulty level</label>
+    <select id="learningLevel"><option>Beginner</option><option selected>First-year college</option><option>Intermediate</option><option>Advanced</option></select>
+    <label for="learningCount">Number of practice questions (if applicable)</label>
+    <select id="learningCount"><option>5</option><option selected>10</option><option>15</option><option>20</option></select>
+    <div class="preferences-actions"><button type="button" onclick="document.getElementById('learningTopic').value=''">Clear</button><button type="button" class="preferences-save" onclick="startLearningSession()">Start learning</button></div>
+    <p class="preferences-hint">RAIZEN will guide the session in chat. It does not grade or track academic performance automatically.</p>
   </div>
 </div>
 <div id="activityModal" class="preferences-modal" aria-hidden="true">
@@ -2152,6 +2195,87 @@ function sendCodeStudioTask() {
     const prompt="Act as my coding assistant. Programming language: "+language+". Task: "+task+". Explain clearly, show corrected code when appropriate, and point out important edge cases.\n\nInput:\n"+code;
     closeCodeStudio(); document.getElementById("personality").value="Coding Assistant"; document.getElementById("responseStyle").value="Detailed"; usePrompt(prompt); window.sendMessage();
 }
+let editingPromptId = null;
+function promptLibraryKey() { return "raizen_prompt_library_" + String(loggedInUsername || "guest").toLowerCase(); }
+function getPromptLibrary() {
+    try { const value=JSON.parse(localStorage.getItem(promptLibraryKey()) || "[]"); return Array.isArray(value)?value:[]; }
+    catch(error) { return []; }
+}
+function openPromptLibrary() {
+    renderPromptLibrary();
+    const modal=document.getElementById("promptLibraryModal");
+    if(modal){modal.classList.add("open");modal.setAttribute("aria-hidden","false");}
+}
+function closePromptLibrary() {
+    const modal=document.getElementById("promptLibraryModal");
+    if(modal){modal.classList.remove("open");modal.setAttribute("aria-hidden","true");}
+}
+function clearPromptEditor() {
+    editingPromptId=null;
+    document.getElementById("promptTitleInput").value="";
+    document.getElementById("promptBodyInput").value="";
+    const button=document.querySelector("#promptLibraryModal .preferences-save");
+    if(button)button.textContent="Save prompt";
+}
+function renderPromptLibrary() {
+    const list=document.getElementById("promptLibraryList");
+    if(!list)return;
+    const query=(document.getElementById("promptSearch")?.value || "").trim().toLowerCase();
+    const prompts=getPromptLibrary().filter(item=>(item.title+" "+item.body).toLowerCase().includes(query));
+    list.innerHTML="";
+    if(!prompts.length){list.innerHTML='<div class="history-empty">No saved prompts yet. Add one below.</div>';return;}
+    prompts.forEach(prompt=>{
+        const card=document.createElement("div");card.className="prompt-library-item";
+        const title=document.createElement("strong");title.textContent=prompt.title;
+        const body=document.createElement("p");body.textContent=prompt.body;
+        const actions=document.createElement("div");actions.className="prompt-library-actions";
+        const use=document.createElement("button");use.type="button";use.textContent="Use";use.onclick=()=>{usePrompt(prompt.body);closePromptLibrary();};
+        const edit=document.createElement("button");edit.type="button";edit.textContent="Edit";edit.onclick=()=>{editingPromptId=prompt.id;document.getElementById("promptTitleInput").value=prompt.title;document.getElementById("promptBodyInput").value=prompt.body;const save=document.querySelector("#promptLibraryModal .preferences-save");if(save)save.textContent="Update prompt";};
+        const remove=document.createElement("button");remove.type="button";remove.textContent="Delete";remove.onclick=()=>{if(!confirm("Delete this saved prompt?"))return;localStorage.setItem(promptLibraryKey(),JSON.stringify(getPromptLibrary().filter(item=>item.id!==prompt.id)));renderPromptLibrary();if(editingPromptId===prompt.id)clearPromptEditor();};
+        actions.append(use,edit,remove);card.append(title,body,actions);list.appendChild(card);
+    });
+}
+function saveLibraryPrompt() {
+    const title=document.getElementById("promptTitleInput").value.trim();
+    const body=document.getElementById("promptBodyInput").value.trim();
+    if(!title||!body){alert("Add both a prompt name and prompt text.");return;}
+    if(body.length>12000){alert("Prompt text must be 12,000 characters or fewer.");return;}
+    const prompts=getPromptLibrary();
+    if(editingPromptId){
+        const item=prompts.find(prompt=>prompt.id===editingPromptId);
+        if(item){item.title=title.slice(0,60);item.body=body;item.updatedAt=Date.now();}
+    }else{
+        if(prompts.length>=100){alert("Your prompt library is full. Delete a prompt before adding another.");return;}
+        prompts.unshift({id:Date.now().toString()+Math.random().toString(36).slice(2,7),title:title.slice(0,60),body,updatedAt:Date.now()});
+    }
+    localStorage.setItem(promptLibraryKey(),JSON.stringify(prompts));
+    clearPromptEditor();renderPromptLibrary();
+}
+function openLearningMode() {
+    const modal=document.getElementById("learningModeModal");
+    if(modal){modal.classList.add("open");modal.setAttribute("aria-hidden","false");}
+}
+function closeLearningMode() {
+    const modal=document.getElementById("learningModeModal");
+    if(modal){modal.classList.remove("open");modal.setAttribute("aria-hidden","true");}
+}
+function startLearningSession() {
+    const topic=document.getElementById("learningTopic").value.trim();
+    if(!topic){alert("Enter a topic to begin your learning session.");return;}
+    const approach=document.getElementById("learningApproach").value;
+    const level=document.getElementById("learningLevel").value;
+    const count=document.getElementById("learningCount").value;
+    const activities={
+        teach:"Teach the topic step by step. Start with prerequisites, explain each idea in simple language, use a worked example, then ask me one short check-for-understanding question before moving on.",
+        practice:"Create "+count+" practice questions in increasing difficulty. Ask one at a time, wait for my answer, then explain the solution and give constructive feedback.",
+        quiz:"Run a quiz interactively, one question at a time. Ask "+count+" questions, wait for each answer, explain why it is correct or incorrect, and give a final score at the end.",
+        revision:"Create clear, concise revision notes with key definitions, formulas or rules where relevant, examples, and a short recap.",
+        exam:"Prepare an exam-focused explanation with a clear structure, important points, examples, and a concise conclusion. Include common mistakes to avoid."
+    };
+    const prompt="Act as a patient learning tutor. Topic: "+topic+". Learner level: "+level+". Learning activity: "+activities[approach]+" Use accurate explanations, define unfamiliar terms, and do not assume prior knowledge. Keep the session interactive and let me ask questions at any time.";
+    closeLearningMode();document.getElementById("personality").value="Teacher";document.getElementById("responseStyle").value="Detailed";usePrompt(prompt);window.sendMessage();
+}
+
 function openActivityDashboard() {
     const chats=Array.isArray(savedChats)?savedChats:[];
     const messages=chats.reduce((sum,chat)=>sum+(Array.isArray(chat.messages)?chat.messages.length:0),0);
