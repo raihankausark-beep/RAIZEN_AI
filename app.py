@@ -4248,7 +4248,6 @@ async def clear_user_memory(token: str = ""):
 
 
 @app.post("/upload")
-async def upload_file@app.post("/upload")
 async def upload_file(file: UploadFile = File(...), token: str = Form("")):
     if not get_authenticated_username(token):
         return {"error": "Please log in to upload documents."}
