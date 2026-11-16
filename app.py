@@ -2967,7 +2967,7 @@ function openChat(id) {
     const chat = document.getElementById("chat");
     chat.innerHTML = "";
     if (!chatHistory.length) {
-        chat.innerHTML = '';
+        chat.innerHTML = emptyChatInterfaceMarkup();
     } else {
         chatHistory.forEach(item => displayMessage(item.role, item.content));
     }
@@ -3000,7 +3000,7 @@ function clearAllHistory() {
     chatHistory = [];
     localStorage.removeItem("raizen_saved_chats_" + loggedInUsername.toLowerCase());
     localStorage.removeItem("raizen_chat_history_" + loggedInUsername.toLowerCase());
-    document.getElementById("chat").innerHTML = '';
+    document.getElementById("chat").innerHTML = emptyChatInterfaceMarkup();
     renderHistory();
 }
 
@@ -3875,7 +3875,7 @@ function clearChat() {
     chatHistory = [];
     currentChatId = null;
     localStorage.removeItem("raizen_chat_history_" + loggedInUsername.toLowerCase());
-    document.getElementById("chat").innerHTML = '';
+    document.getElementById("chat").innerHTML = emptyChatInterfaceMarkup();
     renderHistory();
 }
 
@@ -3883,7 +3883,7 @@ function newChat() {
     if (chatHistory.length) saveCurrentChat();
     chatHistory = [];
     currentChatId = null;
-    document.getElementById("chat").innerHTML = '';
+    document.getElementById("chat").innerHTML = emptyChatInterfaceMarkup();
     const drawer = document.getElementById("historyDrawer");
     if (drawer && drawer.classList.contains("open")) drawer.classList.remove("open");
 }
