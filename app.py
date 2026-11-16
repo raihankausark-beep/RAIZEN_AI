@@ -1464,6 +1464,16 @@ button{color:inherit}
 .file-input,.vision-input{max-width:100%;color:#bbb;font-size:12px}.file-name,.vision-name{color:#aaa;font-size:12px}.control{border:1px solid #333;background:#202020;border-radius:10px;padding:7px 10px;cursor:pointer}
 .small{display:none}
 
+/* Simplified private workspace navigation */
+.tool-group{grid-column:1/-1;border:1px solid #292929;border-radius:12px;background:#101010;overflow:hidden}
+.tool-group summary{list-style:none;cursor:pointer;padding:12px 13px;color:#e5e5e5;font-size:13px;font-weight:650;display:flex;align-items:center;justify-content:space-between}
+.tool-group summary::-webkit-details-marker{display:none}
+.tool-group summary::after{content:"＋";color:#8c8c8c;font-size:16px}
+.tool-group[open] summary::after{content:"−"}
+.tool-group[open] summary{border-bottom:1px solid #292929}
+.tool-group .history-tool-btn{width:calc(100% - 16px);margin:7px 8px;text-align:left;padding:10px 11px}
+.drawer-privacy-note{margin:0 0 12px;padding:10px 12px;border:1px solid #26384b;border-radius:11px;background:#101b29;color:#9fb6d1;font-size:11px;line-height:1.5}
+
 /* History drawer */
 .history-drawer{position:fixed;top:0;left:-370px;width:350px;height:100dvh;background:#0b0b0b;border-right:1px solid #2b2b2b;z-index:1000;padding:22px;transition:left .25s ease;overflow-y:auto;box-shadow:20px 0 60px rgba(0,0,0,.5)}
 .history-drawer.open{left:0}
@@ -1856,22 +1866,35 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
 
   <div id="historyDrawer" class="history-drawer">
     <div class="history-top"><strong>Chat history</strong><button onclick="toggleHistory()">✕</button></div>
+    <p class="drawer-privacy-note">Your personal workspace. Admin-only system information is hidden from other accounts.</p>
     <button class="new-chat-history" onclick="newChat();toggleHistory()">＋ New chat</button>
     <div class="history-tools">
-      <button class="history-tool-btn" onclick="createChatFolder()">＋ Folder</button>
-      <button class="history-tool-btn" onclick="exportCurrentChat('txt')">↓ Export TXT</button>
-      <button class="history-tool-btn" onclick="exportCurrentChat('pdf')">▤ Save PDF</button>
-      <button class="history-tool-btn" onclick="openPreferences()">⚙ Preferences</button>
-      <button class="history-tool-btn" onclick="openCodeStudio()">⌘ Code Studio</button>
-      <button class="history-tool-btn" onclick="openActivityDashboard()">▥ My Activity</button>
-      <button class="history-tool-btn" onclick="openIntelligenceDashboard()">◈ Intelligence</button>
-      <button class="history-tool-btn" onclick="openSecurityCenter()">🛡 Security Center</button>
-      <button class="history-tool-btn" id="pwaInstallBtn" onclick="installRaizenApp()">＋ Install RAIZEN App</button>
-      <button class="history-tool-btn" onclick="openResearchWorkspace()">▤ Research Workspace</button>
-      <button class="history-tool-btn" onclick="openPromptLibrary()">✦ Prompt Library</button>
-      <button class="history-tool-btn" onclick="openLearningMode()">🎓 Learning Mode</button>
-      <button class="history-tool-btn" onclick="cycleTheme()">◐ Change Theme</button>
-      <button class="history-tool-btn" id="voiceModeButton" onclick="toggleVoiceMode()">🔊 Voice Mode: Off</button>
+      <details class="tool-group" open>
+        <summary>Everyday tools</summary>
+        <button class="history-tool-btn" onclick="openCodeStudio()">⌘ Code Studio</button>
+        <button class="history-tool-btn" onclick="openResearchWorkspace()">▤ Research Workspace</button>
+        <button class="history-tool-btn" onclick="openLearningMode()">🎓 Learning Mode</button>
+        <button class="history-tool-btn" onclick="openPromptLibrary()">✦ Prompt Library</button>
+        <button class="history-tool-btn" id="voiceModeButton" onclick="toggleVoiceMode()">🔊 Voice Mode: Off</button>
+      </details>
+      <details class="tool-group">
+        <summary>Personalize RAIZEN</summary>
+        <button class="history-tool-btn" onclick="openPreferences()">⚙ Preferences</button>
+        <button class="history-tool-btn" onclick="cycleTheme()">◐ Change Theme</button>
+      </details>
+      <details class="tool-group">
+        <summary>Account & privacy</summary>
+        <button class="history-tool-btn" onclick="openActivityDashboard()">▥ My Activity</button>
+        <button class="history-tool-btn" onclick="openSecurityCenter()">🛡 Security Center</button>
+        <button class="history-tool-btn" id="pwaInstallBtn" onclick="installRaizenApp()">＋ Install RAIZEN App</button>
+        <button class="history-tool-btn" id="intelligenceMenuButton" style="display:none" onclick="openIntelligenceDashboard()">◈ Admin overview</button>
+      </details>
+      <details class="tool-group">
+        <summary>Chat actions</summary>
+        <button class="history-tool-btn" onclick="createChatFolder()">＋ Folder</button>
+        <button class="history-tool-btn" onclick="exportCurrentChat('txt')">↓ Export TXT</button>
+        <button class="history-tool-btn" onclick="exportCurrentChat('pdf')">▤ Save PDF</button>
+      </details>
     </div>
     <div id="folderFilters" class="folder-filters"></div>
     <input id="historySearch" class="history-search" type="search" placeholder="Search your conversations..." aria-label="Search chat history" oninput="renderHistory()">
@@ -1889,16 +1912,13 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
 
   <main id="chat" class="chat">
     <section class="hero" id="heroPanel">
-      <div class="hero-title">How can I help?</div>
-      <div class="hero-subtitle">Chat with RAIZEN, create images, work with files, search the web, and more.</div>
+      <div class="hero-title">What can I help with?</div>
+      <div class="hero-subtitle">A simple space to ask questions, learn, code, and work with your files.</div>
       <div class="prompt-grid">
-        <button class="prompt-card" onclick="usePrompt('Help me write or edit something')"><strong>✎ Write or edit</strong>Ask naturally</button>
-        <button class="prompt-card" onclick="usePrompt('Create a poster for Applied Mathematics')"><strong>▧ Create anything</strong>RAIZEN decides what to do</button>
-        <button class="prompt-card" onclick="usePrompt('Search the latest AI news')"><strong>◎ Search the web</strong>Ask for current information</button>
-        <button class="prompt-card" onclick="document.getElementById('fileInput').click()"><strong>＋ Attach</strong>Add a PDF, DOCX, TXT, or image</button>
-        <button class="prompt-card" onclick="openResearchWorkspace()"><strong>▤ Research</strong>Explore a document</button>
-        <button class="prompt-card" onclick="usePrompt('What is the weather in Cuttack today?')"><strong>☼ Weather</strong>Ask about live conditions</button>
-        <button class="prompt-card" onclick="usePrompt('Explain this topic simply')"><strong>⚡ Ask anything</strong>No special mode needed</button>
+        <button class="prompt-card" onclick="usePrompt('Help me write or edit something')"><strong>✎ Write or edit</strong>Draft, rewrite, or improve</button>
+        <button class="prompt-card" onclick="usePrompt('Explain this topic simply')"><strong>✦ Ask anything</strong>Get a clear explanation</button>
+        <button class="prompt-card" onclick="usePrompt('Search the latest information about')"><strong>◎ Search the web</strong>Find current information</button>
+        <button class="prompt-card" onclick="document.getElementById('fileInput').click()"><strong>＋ Add a file</strong>PDF, DOCX, TXT, or image</button>
       </div>
     </section>
     <div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>
@@ -1908,7 +1928,7 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
     <div class="composer">
       <div class="tool-strip unified-tools">
         <button class="tool-chip" onclick="document.getElementById('fileInput').click()">＋ Attach file or image</button>
-        <span class="tool-hint">Just type what you want — RAIZEN chooses chat, image generation, web, weather, vision, or file help automatically.</span>
+        <span class="tool-hint">Ask naturally. Attach a file whenever you need help with it.</span>
       </div>
 
       <div class="file-panel">
@@ -2146,6 +2166,10 @@ async function checkLogin(){
                 const adminButton = document.getElementById("adminMenuButton");
                 if (adminButton) {
                     adminButton.style.display = adminData.is_admin ? "block" : "none";
+                }
+                const intelligenceButton = document.getElementById("intelligenceMenuButton");
+                if (intelligenceButton) {
+                    intelligenceButton.style.display = adminData.is_admin ? "block" : "none";
                 }
             } catch (adminError) {
                 console.warn("ADMIN CHECK NOTICE:", adminError);
@@ -4386,7 +4410,9 @@ def record_usage_event(username: str, event_type: str):
 
 
 @app.get("/api/workspace/overview")
-async def workspace_overview(token: str = ""):
+async def workspace_overview(request: Request, token: str = ""):
+    if not is_admin_request(request):
+        return JSONResponse({"error": "Admin access required."}, status_code=403)
     username = await asyncio.to_thread(get_authenticated_username, token)
     if not username:
         return JSONResponse({"error": "Please log in to view your workspace."}, status_code=401)
