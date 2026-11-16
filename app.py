@@ -1352,7 +1352,40 @@ button{color:inherit}
 .auth-screen{display:none!important}
 #creatorResetPanel{display:none!important}
 
+.history-tools{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:0 0 10px}
+.history-tool-btn{border:1px solid #303030;background:#151515;color:#ddd;border-radius:10px;padding:9px 7px;font-size:12px;cursor:pointer}
+.folder-filters{display:flex;gap:6px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:none}
+.folder-filter{white-space:nowrap;border:1px solid #303030;background:#111;color:#aaa;border-radius:999px;padding:6px 10px;font-size:11px;cursor:pointer}
+.folder-filter.active{border-color:#4d8dff;background:#17263b;color:#fff}
+.history-item{padding-bottom:44px}
+.history-item.pinned{border-color:#456da7;background:#141c29}
+.history-item-tools{position:absolute;left:10px;bottom:8px;display:flex;gap:6px}
+.history-mini-btn{border:1px solid #333;background:#1b1b1b;color:#aaa;border-radius:7px;padding:4px 7px;font-size:10px;cursor:pointer}
+.history-folder-label{font-size:10px;color:#83aeea;margin-top:4px}
+.preferences-modal{display:none;position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.76);padding:18px;align-items:center;justify-content:center}
+.preferences-modal.open{display:flex}
+.preferences-card{width:min(540px,100%);max-height:90dvh;overflow:auto;background:#111;border:1px solid #333;border-radius:20px;padding:20px;box-shadow:0 20px 70px rgba(0,0,0,.65)}
+.preferences-heading{display:flex;align-items:center;justify-content:space-between;font-size:18px;margin-bottom:18px}
+.preferences-heading button{background:#222;border:1px solid #333;border-radius:9px;padding:7px 10px;color:#fff}
+.preferences-card label{display:block;color:#aaa;font-size:12px;margin:14px 0 6px}
+.preferences-card select,.preferences-card textarea{width:100%;background:#1a1a1a;color:#fff;border:1px solid #333;border-radius:10px;padding:11px;outline:none}
+.preferences-card textarea{resize:vertical;line-height:1.5}
+.preferences-hint{font-size:11px;line-height:1.5;color:#777}
+.preferences-actions{display:flex;justify-content:space-between;gap:8px;margin-top:14px}
+.preferences-actions button{border:1px solid #333;background:#222;color:#ddd;border-radius:10px;padding:10px 12px}
+.preferences-actions .preferences-save{background:#315f9f;border-color:#477fc8;color:white}
 @media(max-width:650px){
+ .message{overflow-wrap:anywhere}
+ .input-area{gap:5px}
+ .circle-btn,#sendButton{width:39px;height:39px;flex-basis:39px;font-size:18px}
+ .history-drawer{padding:18px 14px}
+ .preferences-card{padding:16px}
+ .preferences-actions{flex-direction:column}
+ .preferences-actions button{width:100%}
+ .top-right{gap:6px}
+ .account-pill{max-width:120px;padding:5px 8px}
+ .account-pill span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .composer-note{font-size:9px}
  .topbar{height:68px;min-height:68px;padding:10px 12px}.icon-btn{width:46px;height:46px;border-radius:14px}.brand-pill{height:42px;padding:0 15px;font-size:18px}.chat{padding:0 12px 170px}.hero{margin-top:10vh;padding:10px 4px}.hero-title{font-size:34px}.hero-subtitle{font-size:14px;max-width:330px;margin-bottom:25px}.prompt-grid{grid-template-columns:1fr 1fr;gap:8px}.prompt-card{min-height:65px;padding:11px;font-size:12px;border-radius:16px}.prompt-card strong{font-size:13px}.message{max-width:94%;font-size:14px}.composer-wrap{padding:8px 10px calc(10px + env(safe-area-inset-bottom))}.tool-chip{font-size:11px;padding:7px 10px}.input-area{border-radius:25px;padding-left:8px}.circle-btn,#sendButton{width:41px;height:41px;flex-basis:41px}.history-drawer{width:88%;left:-92%}.history-drawer.open{left:0}
 }
 </style>
@@ -1399,6 +1432,13 @@ button{color:inherit}
   <div id="historyDrawer" class="history-drawer">
     <div class="history-top"><strong>Chat history</strong><button onclick="toggleHistory()">✕</button></div>
     <button class="new-chat-history" onclick="newChat();toggleHistory()">＋ New chat</button>
+    <div class="history-tools">
+      <button class="history-tool-btn" onclick="createChatFolder()">＋ Folder</button>
+      <button class="history-tool-btn" onclick="exportCurrentChat('txt')">↓ Export TXT</button>
+      <button class="history-tool-btn" onclick="exportCurrentChat('pdf')">▤ Save PDF</button>
+      <button class="history-tool-btn" onclick="openPreferences()">⚙ Preferences</button>
+    </div>
+    <div id="folderFilters" class="folder-filters"></div>
     <input id="historySearch" class="history-search" type="search" placeholder="Search your conversations..." aria-label="Search chat history" oninput="renderHistory()">
     <div id="historyList"></div>
     <button class="clear-history-btn" onclick="clearAllHistory()">🗑️ Clear history</button>
@@ -1445,12 +1485,29 @@ button{color:inherit}
 
       <div class="input-area">
         <button class="circle-btn" aria-label="Attach" title="Attach a file or image" onclick="document.getElementById('fileInput').click()">＋</button>
+        <button class="circle-btn" id="voiceInputButton" aria-label="Voice input" title="Speak to RAIZEN" onclick="toggleVoiceInput()">🎙</button>
         <input id="messageInput" placeholder="Message RAIZEN... ask for anything" autocomplete="off">
         <button type="button" id="stopButton" class="stop-btn" aria-label="Stop generating" title="Stop generating" onclick="stopGeneration()">■</button>
         <button type="button" id="sendButton" aria-label="Send" onclick="window.sendMessage()">↑</button>
       </div>
       <div class="composer-note">RAIZEN • One prompt. Just ask. RAIZEN decides what to do.</div>
     </div>
+  </div>
+</div>
+
+<div id="preferencesModal" class="preferences-modal" aria-hidden="true">
+  <div class="preferences-card" role="dialog" aria-modal="true" aria-labelledby="preferencesTitle">
+    <div class="preferences-heading"><strong id="preferencesTitle">RAIZEN preferences</strong><button type="button" onclick="closePreferences()" aria-label="Close preferences">✕</button></div>
+    <label for="savedPersonality">Assistant personality</label>
+    <select id="savedPersonality"><option>Friendly</option><option>Teacher</option><option>Coding Assistant</option><option>Professional</option></select>
+    <label for="savedResponseStyle">Response style</label>
+    <select id="savedResponseStyle"><option>Short</option><option>Balanced</option><option>Detailed</option></select>
+    <label for="memoryNotes">My saved notes (only used in your chats)</label>
+    <textarea id="memoryNotes" rows="4" placeholder="Add preferences or facts you want RAIZEN to remember. Avoid sensitive information."></textarea>
+    <label for="customInstructions">Custom instructions</label>
+    <textarea id="customInstructions" rows="4" placeholder="How should RAIZEN respond?"></textarea>
+    <p class="preferences-hint">Stored in this browser for this signed-in account. You can edit or clear these notes anytime.</p>
+    <div class="preferences-actions"><button type="button" onclick="clearPersonalMemory()">Clear saved notes</button><button type="button" class="preferences-save" onclick="savePreferences()">Save preferences</button></div>
   </div>
 </div>
 
@@ -1603,6 +1660,7 @@ function showAppDirect(){
     const container = document.querySelector(".container");
     if (authScreen) authScreen.style.display = "none";
     if (container) container.style.display = "flex";
+    loadPreferences();
     loadChatHistory();
 }
 
@@ -1766,7 +1824,9 @@ function saveCurrentChat() {
         id: currentChatId,
         title: makeChatTitle(chatHistory),
         messages: chatHistory.slice(-100),
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
+        pinned: !!(savedChats.find(c => c.id === currentChatId) || {}).pinned,
+        folder: (savedChats.find(c => c.id === currentChatId) || {}).folder || ""
     };
     const index = savedChats.findIndex(c => c.id === currentChatId);
     if (index >= 0) savedChats[index] = chatData;
@@ -1781,45 +1841,107 @@ function renderHistory() {
     const list = document.getElementById("historyList");
     if (!list) return;
     list.innerHTML = "";
-    if (!savedChats.length) {
-        list.innerHTML = '<div class="history-empty">No saved chats yet.</div>';
-        return;
-    }
+    renderFolderFilters();
+    if (!savedChats.length) { list.innerHTML = '<div class="history-empty">No saved chats yet.</div>'; return; }
     const searchInput = document.getElementById("historySearch");
     const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
-    const chatsToShow = [...savedChats]
-        .sort((a,b) => b.updatedAt - a.updatedAt)
-        .filter(chat => {
-            if (!query) return true;
-            const title = (chat.title || "New Chat").toLowerCase();
-            const messageText = (Array.isArray(chat.messages) ? chat.messages : [])
-                .map(message => String(message.content || ""))
-                .join(" ")
-                .toLowerCase();
-            return title.includes(query) || messageText.includes(query);
-        });
-    if (!chatsToShow.length) {
-        list.innerHTML = '<div class="history-empty">No conversations match that search.</div>';
-        return;
-    }
+    const chatsToShow = [...savedChats].sort((a,b) => Number(!!b.pinned)-Number(!!a.pinned) || b.updatedAt-a.updatedAt).filter(chat => {
+        if (activeFolderFilter && (chat.folder || "") !== activeFolderFilter) return false;
+        if (!query) return true;
+        const title = (chat.title || "New Chat").toLowerCase();
+        const messageText = (Array.isArray(chat.messages) ? chat.messages : []).map(message => String(message.content || "")).join(" ").toLowerCase();
+        return title.includes(query) || messageText.includes(query);
+    });
+    if (!chatsToShow.length) { list.innerHTML = '<div class="history-empty">No conversations in this view.</div>'; return; }
     chatsToShow.forEach(chat => {
         const item = document.createElement("div");
-        item.className = "history-item";
-        const title = document.createElement("div");
-        title.className = "history-title";
-        title.textContent = chat.title || "New Chat";
-        const date = document.createElement("div");
-        date.className = "history-date";
-        date.textContent = new Date(chat.updatedAt).toLocaleString();
-        const del = document.createElement("button");
-        del.className = "history-delete";
-        del.textContent = "🗑";
-        del.title = "Delete chat";
-        del.onclick = function(e) { e.stopPropagation(); deleteChat(chat.id); };
-        item.appendChild(title); item.appendChild(date); item.appendChild(del);
-        item.onclick = function() { openChat(chat.id); };
-        list.appendChild(item);
+        item.className = "history-item" + (chat.pinned ? " pinned" : "");
+        const title = document.createElement("div"); title.className = "history-title"; title.textContent = (chat.pinned ? "📌 " : "") + (chat.title || "New Chat");
+        const date = document.createElement("div"); date.className = "history-date"; date.textContent = new Date(chat.updatedAt).toLocaleString();
+        const folder = document.createElement("div"); folder.className = "history-folder-label"; folder.textContent = chat.folder ? "📁 " + chat.folder : "";
+        const del = document.createElement("button"); del.className = "history-delete"; del.textContent = "🗑"; del.title = "Delete chat"; del.onclick = e => { e.stopPropagation(); deleteChat(chat.id); };
+        const tools = document.createElement("div"); tools.className = "history-item-tools";
+        const pin = document.createElement("button"); pin.className = "history-mini-btn"; pin.textContent = chat.pinned ? "Unpin" : "📌 Pin"; pin.onclick = e => { e.stopPropagation(); togglePinChat(chat.id); };
+        const move = document.createElement("button"); move.className = "history-mini-btn"; move.textContent = "📁 Folder"; move.onclick = e => { e.stopPropagation(); assignChatFolder(chat.id); };
+        tools.appendChild(pin); tools.appendChild(move);
+        item.appendChild(title); item.appendChild(date); if(chat.folder) item.appendChild(folder); item.appendChild(del); item.appendChild(tools);
+        item.onclick = () => openChat(chat.id); list.appendChild(item);
     });
+}
+
+let activeFolderFilter = "";
+function getChatFolders() { return [...new Set(savedChats.map(chat => String(chat.folder || "").trim()).filter(Boolean))].sort(); }
+function renderFolderFilters() {
+    const holder = document.getElementById("folderFilters"); if (!holder) return; holder.innerHTML = "";
+    const all = document.createElement("button"); all.className = "folder-filter" + (!activeFolderFilter ? " active" : ""); all.textContent = "All chats"; all.onclick = () => { activeFolderFilter = ""; renderHistory(); }; holder.appendChild(all);
+    getChatFolders().forEach(folder => { const button = document.createElement("button"); button.className = "folder-filter" + (activeFolderFilter === folder ? " active" : ""); button.textContent = "📁 " + folder; button.onclick = () => { activeFolderFilter = folder; renderHistory(); }; holder.appendChild(button); });
+}
+function togglePinChat(id) { const chat = savedChats.find(item => item.id === id); if (!chat) return; chat.pinned = !chat.pinned; saveChats(); renderHistory(); }
+function createChatFolder() {
+    const name = window.prompt("Name your folder:"); if (!name || !name.trim()) return;
+    const clean = name.trim().slice(0,32); const target = currentChatId && savedChats.find(item => item.id === currentChatId);
+    if (target) target.folder = clean; saveChats(); activeFolderFilter = clean; renderHistory();
+}
+function assignChatFolder(id) {
+    const chat = savedChats.find(item => item.id === id); if (!chat) return;
+    const folders = getChatFolders(); const hint = folders.length ? "Existing folders: " + folders.join(", ") + ". Leave blank to remove." : "Enter a folder name. Leave blank to remove.";
+    const name = window.prompt(hint, chat.folder || ""); if (name === null) return; chat.folder = name.trim().slice(0,32); saveChats(); renderHistory();
+}
+function exportCurrentChat(format) {
+    if (!chatHistory.length) { alert("There is no conversation to export yet."); return; }
+    const title = makeChatTitle(chatHistory);
+    const content = chatHistory.map(item => (item.role === "user" ? "YOU" : "RAIZEN") + "\n" + String(item.content || "")).join("\n\n------------------------------\n\n");
+    if (format === "txt") {
+        const blob = new Blob([title + "\n\n" + content], {type:"text/plain;charset=utf-8"}); const url = URL.createObjectURL(blob);
+        const link = document.createElement("a"); link.href = url; link.download = "RAIZEN-" + title.replace(/[^a-z0-9-_]+/gi,"-").slice(0,40) + ".txt"; link.click(); URL.revokeObjectURL(url); return;
+    }
+    const printWindow = window.open("", "_blank"); if (!printWindow) { alert("Please allow pop-ups to save the conversation as PDF."); return; }
+    const escaped = escapeHtml(title + "\n\n" + content).replace(/\n/g,"<br>");
+    printWindow.document.write("<!doctype html><html><head><title>RAIZEN conversation</title><style>body{font:14px/1.6 Arial,sans-serif;max-width:850px;margin:40px auto;padding:0 24px;color:#171717}h1{font-size:22px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 Arial,sans-serif}@media print{body{margin:15mm auto}}</style></head><body><h1>RAIZEN — " + escapeHtml(title) + "</h1><pre>" + escaped + "</pre></body></html>");
+    printWindow.document.close(); printWindow.onload = () => printWindow.print();
+}
+function openPreferences() {
+    const key = loggedInUsername.toLowerCase(); const modal = document.getElementById("preferencesModal");
+    document.getElementById("savedPersonality").value = localStorage.getItem("raizen_personality_" + key) || "Friendly";
+    document.getElementById("savedResponseStyle").value = localStorage.getItem("raizen_response_style_" + key) || "Balanced";
+    document.getElementById("memoryNotes").value = localStorage.getItem("raizen_memory_notes_" + key) || "";
+    let instructions = localStorage.getItem("raizen_custom_instructions_" + key);
+    if (instructions === null) instructions = localStorage.getItem("raizen_custom_instructions") || "";
+    document.getElementById("customInstructions").value = instructions;
+    if (modal) { modal.classList.add("open"); modal.setAttribute("aria-hidden","false"); }
+}
+function closePreferences() { const modal = document.getElementById("preferencesModal"); if(modal){modal.classList.remove("open");modal.setAttribute("aria-hidden","true");} }
+function savePreferences() {
+    const key = loggedInUsername.toLowerCase();
+    localStorage.setItem("raizen_personality_" + key,document.getElementById("savedPersonality").value);
+    localStorage.setItem("raizen_response_style_" + key,document.getElementById("savedResponseStyle").value);
+    localStorage.setItem("raizen_memory_notes_" + key,document.getElementById("memoryNotes").value.trim());
+    localStorage.setItem("raizen_custom_instructions_" + key,document.getElementById("customInstructions").value.trim());
+    document.getElementById("personality").value=document.getElementById("savedPersonality").value;
+    document.getElementById("responseStyle").value=document.getElementById("savedResponseStyle").value;
+    closePreferences(); alert("Your RAIZEN preferences have been saved in this browser.");
+}
+function clearPersonalMemory() {
+    if (!confirm("Clear your saved RAIZEN notes for this browser account?")) return;
+    document.getElementById("memoryNotes").value=""; localStorage.removeItem("raizen_memory_notes_" + loggedInUsername.toLowerCase());
+}
+function loadPreferences() {
+    const key=loggedInUsername.toLowerCase();
+    document.getElementById("personality").value=localStorage.getItem("raizen_personality_" + key)||"Friendly";
+    document.getElementById("responseStyle").value=localStorage.getItem("raizen_response_style_" + key)||"Balanced";
+    const legacy=localStorage.getItem("raizen_custom_instructions");
+    if(legacy && localStorage.getItem("raizen_custom_instructions_" + key)===null) localStorage.setItem("raizen_custom_instructions_" + key,legacy);
+}
+function toggleVoiceInput() {
+    const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition; const button=document.getElementById("voiceInputButton");
+    if(!SpeechRecognition){alert("Voice input is not supported in this browser. Try a supported browser with microphone permission.");return;}
+    if(window.raizenRecognition){window.raizenRecognition.stop();window.raizenRecognition=null;if(button)button.textContent="🎙";return;}
+    const recognition=new SpeechRecognition(); window.raizenRecognition=recognition; recognition.lang=navigator.language||"en-IN"; recognition.interimResults=true; recognition.continuous=false;
+    if(button)button.textContent="⏹";
+    recognition.onresult=event=>{let transcript="";for(let i=event.resultIndex;i<event.results.length;i++)transcript+=event.results[i][0].transcript;document.getElementById("messageInput").value=transcript;};
+    recognition.onerror=()=>{if(button)button.textContent="🎙";window.raizenRecognition=null;};
+    recognition.onend=()=>{if(button)button.textContent="🎙";window.raizenRecognition=null;document.getElementById("messageInput").focus();};
+    try{recognition.start();}catch(error){window.raizenRecognition=null;if(button)button.textContent="🎙";alert("Could not start voice input. Check microphone permission.");}
 }
 
 function openChat(id) {
@@ -1827,6 +1949,7 @@ function openChat(id) {
     if (!selected) return;
     currentChatId = selected.id;
     chatHistory = Array.isArray(selected.messages) ? [...selected.messages] : [];
+    lastNormalUserMessage = [...chatHistory].reverse().find(item => item.role === "user")?.content || "";
     const chat = document.getElementById("chat");
     chat.innerHTML = "";
     if (!chatHistory.length) {
@@ -2440,10 +2563,12 @@ window.sendMessage = async function sendMessage() {
                         document.getElementById("personality").value,
                     response_style:
                         document.getElementById("responseStyle").value,
-                    custom_instructions:
-                        localStorage.getItem(
-                            "raizen_custom_instructions"
-                        ) || "",
+                    custom_instructions: [
+                        localStorage.getItem("raizen_custom_instructions_" + loggedInUsername.toLowerCase()) || "",
+                        localStorage.getItem("raizen_memory_notes_" + loggedInUsername.toLowerCase())
+                            ? "User-approved saved notes (use only when relevant): " + localStorage.getItem("raizen_memory_notes_" + loggedInUsername.toLowerCase())
+                            : ""
+                    ].filter(Boolean).join("\n\n"),
                     document_text: documentText,
                     stream: true
                 }),
@@ -2726,10 +2851,12 @@ async function regenerateLastResponse() {
 }
 
 function clearChat() {
+    if (currentChatId) { savedChats = savedChats.filter(item => item.id !== currentChatId); saveChats(); }
     chatHistory = [];
     currentChatId = null;
     localStorage.removeItem("raizen_chat_history_" + loggedInUsername.toLowerCase());
     document.getElementById("chat").innerHTML = '<div id="welcome" class="assistant message">⚡ Welcome to RAIZEN. Ask me anything.</div>';
+    renderHistory();
 }
 
 function newChat() {
