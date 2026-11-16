@@ -599,6 +599,10 @@ class ChatRequest(BaseModel):
     response_style: str = "Balanced"
     custom_instructions: str = ""
     document_text: str = ""
+    temperature: float = 0.7
+    web_search_mode: str = "Auto"
+    response_format: str = "Natural"
+    use_memory: bool = True
     stream: bool = False
 
 
@@ -700,7 +704,7 @@ class GeminiChunk:
         self.choices = [GeminiStreamChoice(content)]
 
 
-def gemini_chat_completion(messages, max_tokens=MAX_CHAT_OUTPUT_TOKENS):
+def gemini_chat_completion(messages, max_tokens=MAX_CHAT_OUTPUT_TOKENS, temperature=0.7):
     if not GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY is not configured on the server.")
 
@@ -718,7 +722,7 @@ def gemini_chat_completion(messages, max_tokens=MAX_CHAT_OUTPUT_TOKENS):
                     "messages": messages,
                     "max_tokens": max_tokens,
                     "stream": False,
-                    "temperature": 0.7
+                    "temperature": max(0.1, min(1.0, float(temperature)))
                 }).encode("utf-8")
 
                 req = URLRequest(
@@ -1943,6 +1947,16 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
     <select id="savedPersonality"><option>Friendly</option><option>Teacher</option><option>Coding Assistant</option><option>Professional</option></select>
     <label for="savedResponseStyle">Response style</label>
     <select id="savedResponseStyle"><option>Short</option><option>Balanced</option><option>Detailed</option></select>
+    <div class="control-group">
+      <label for="creativityControl">Creativity <span id="creativityValue">0.7</span></label>
+      <input id="creativityControl" type="range" min="0.1" max="1" step="0.1" value="0.7" oninput="updateCreativityLabel()">
+      <p class="preferences-hint">Lower values are more consistent; higher values allow more varied wording. This does not guarantee better factual accuracy.</p>
+    </div>
+    <label for="webSearchMode">Web search</label>
+    <select id="webSearchMode"><option>Auto</option><option>On</option><option>Off</option></select>
+    <label for="responseFormat">Answer format</label>
+    <select id="responseFormat"><option>Natural</option><option>Bullets</option><option>Step-by-step</option><option>Table</option></select>
+    <label class="memory-toggle"><input id="useSavedMemory" type="checkbox" checked> Use my saved notes in responses</label>
     <label for="memoryNotes">My saved notes (only used in your chats)</label>
     <textarea id="memoryNotes" rows="4" placeholder="Add preferences or facts you want RAIZEN to remember. Avoid sensitive information."></textarea>
     <label for="customInstructions">Custom instructions</label>
@@ -2456,7 +2470,7 @@ function exportSingleChat(id) {
 function exportHistoryBackup() {
     const key = loggedInUsername.toLowerCase();
     const settings = {};
-    ["personality","response_style","custom_instructions","memory_notes"].forEach(name => {
+    ["personality","response_style","custom_instructions","memory_notes","creativity","web_search_mode","response_format","use_memory"].forEach(name => {
         const value = localStorage.getItem("raizen_" + name + "_" + key);
         if (value !== null) settings[name] = value;
     });
@@ -2501,7 +2515,7 @@ function importHistoryBackup(event) {
             saveChats();
             const key = loggedInUsername.toLowerCase();
             const settings = backup.settings && typeof backup.settings === "object" ? backup.settings : {};
-            ["personality","response_style","custom_instructions","memory_notes"].forEach(name => {
+            ["personality","response_style","custom_instructions","memory_notes","creativity","web_search_mode","response_format","use_memory"].forEach(name => {
                 if (typeof settings[name] === "string") {
                     const limit = name === "memory_notes" || name === "custom_instructions" ? 12000 : 100;
                     localStorage.setItem("raizen_" + name + "_" + key, settings[name].slice(0, limit));
@@ -2555,10 +2569,20 @@ function exportCurrentChat(format) {
     printWindow.document.write("<!doctype html><html><head><title>RAIZEN conversation</title><style>body{font:14px/1.6 Arial,sans-serif;max-width:850px;margin:40px auto;padding:0 24px;color:#171717}h1{font-size:22px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 Arial,sans-serif}@media print{body{margin:15mm auto}}</style></head><body><h1>RAIZEN — " + escapeHtml(title) + "</h1><pre>" + escaped + "</pre></body></html>");
     printWindow.document.close(); printWindow.onload = () => printWindow.print();
 }
+function updateCreativityLabel() {
+    const slider = document.getElementById("creativityControl");
+    const label = document.getElementById("creativityValue");
+    if (slider && label) label.textContent = Number(slider.value).toFixed(1);
+}
 async function openPreferences() {
     const key = loggedInUsername.toLowerCase(); const modal = document.getElementById("preferencesModal");
     document.getElementById("savedPersonality").value = localStorage.getItem("raizen_personality_" + key) || "Friendly";
     document.getElementById("savedResponseStyle").value = localStorage.getItem("raizen_response_style_" + key) || "Balanced";
+    document.getElementById("creativityControl").value = localStorage.getItem("raizen_creativity_" + key) || "0.7";
+    document.getElementById("webSearchMode").value = localStorage.getItem("raizen_web_search_mode_" + key) || "Auto";
+    document.getElementById("responseFormat").value = localStorage.getItem("raizen_response_format_" + key) || "Natural";
+    document.getElementById("useSavedMemory").checked = localStorage.getItem("raizen_use_memory_" + key) !== "false";
+    updateCreativityLabel();
     document.getElementById("memoryNotes").value = localStorage.getItem("raizen_memory_notes_" + key) || "";
     let instructions = localStorage.getItem("raizen_custom_instructions_" + key);
     if (instructions === null) instructions = localStorage.getItem("raizen_custom_instructions") || "";
@@ -2580,6 +2604,10 @@ async function savePreferences() {
     if (memoryContent.length > 12000) { alert("Keep saved memory under 12,000 characters."); return; }
     localStorage.setItem("raizen_personality_" + key,document.getElementById("savedPersonality").value);
     localStorage.setItem("raizen_response_style_" + key,document.getElementById("savedResponseStyle").value);
+    localStorage.setItem("raizen_creativity_" + key,String(Math.max(0.1,Math.min(1,Number(document.getElementById("creativityControl").value)||0.7))));
+    localStorage.setItem("raizen_web_search_mode_" + key,document.getElementById("webSearchMode").value);
+    localStorage.setItem("raizen_response_format_" + key,document.getElementById("responseFormat").value);
+    localStorage.setItem("raizen_use_memory_" + key,document.getElementById("useSavedMemory").checked ? "true" : "false");
     localStorage.setItem("raizen_memory_notes_" + key,memoryContent);
     localStorage.setItem("raizen_custom_instructions_" + key,document.getElementById("customInstructions").value.trim());
     document.getElementById("personality").value=document.getElementById("savedPersonality").value;
@@ -2608,6 +2636,15 @@ function loadPreferences() {
     const key=loggedInUsername.toLowerCase();
     document.getElementById("personality").value=localStorage.getItem("raizen_personality_" + key)||"Friendly";
     document.getElementById("responseStyle").value=localStorage.getItem("raizen_response_style_" + key)||"Balanced";
+    const creativity=document.getElementById("creativityControl");
+    if(creativity) creativity.value=localStorage.getItem("raizen_creativity_" + key)||"0.7";
+    const searchMode=document.getElementById("webSearchMode");
+    if(searchMode) searchMode.value=localStorage.getItem("raizen_web_search_mode_" + key)||"Auto";
+    const format=document.getElementById("responseFormat");
+    if(format) format.value=localStorage.getItem("raizen_response_format_" + key)||"Natural";
+    const memoryToggle=document.getElementById("useSavedMemory");
+    if(memoryToggle) memoryToggle.checked=localStorage.getItem("raizen_use_memory_" + key)!=="false";
+    updateCreativityLabel();
     const legacy=localStorage.getItem("raizen_custom_instructions");
     if(legacy && localStorage.getItem("raizen_custom_instructions_" + key)===null) localStorage.setItem("raizen_custom_instructions_" + key,legacy);
     fetch("/api/memory?token="+encodeURIComponent(authToken)).then(response=>response.ok?response.json():null).then(data=>{
@@ -3473,11 +3510,16 @@ window.sendMessage = async function sendMessage() {
                         document.getElementById("responseStyle").value,
                     custom_instructions: [
                         localStorage.getItem("raizen_custom_instructions_" + loggedInUsername.toLowerCase()) || "",
-                        localStorage.getItem("raizen_memory_notes_" + loggedInUsername.toLowerCase())
-                            ? "User-approved saved notes (use only when relevant): " + localStorage.getItem("raizen_memory_notes_" + loggedInUsername.toLowerCase())
-                            : ""
+                        localStorage.getItem("raizen_use_memory_" + loggedInUsername.toLowerCase()) === "false" ? "" :
+                            (localStorage.getItem("raizen_memory_notes_" + loggedInUsername.toLowerCase())
+                                ? "User-approved saved notes (use only when relevant): " + localStorage.getItem("raizen_memory_notes_" + loggedInUsername.toLowerCase())
+                                : "")
                     ].filter(Boolean).join("\n\n"),
                     document_text: documentText,
+                    temperature: Number(localStorage.getItem("raizen_creativity_" + loggedInUsername.toLowerCase()) || "0.7"),
+                    web_search_mode: localStorage.getItem("raizen_web_search_mode_" + loggedInUsername.toLowerCase()) || "Auto",
+                    response_format: localStorage.getItem("raizen_response_format_" + loggedInUsername.toLowerCase()) || "Natural",
+                    use_memory: localStorage.getItem("raizen_use_memory_" + loggedInUsername.toLowerCase()) !== "false",
                     stream: true
                 }),
                 signal: controller.signal
@@ -4590,8 +4632,9 @@ async def chat(request: ChatRequest):
         }
 
     live_data = ""
-
-    if needs_live_search(message):
+    web_search_mode = request.web_search_mode if request.web_search_mode in ("Auto", "On", "Off") else "Auto"
+    should_search = web_search_mode == "On" or (web_search_mode == "Auto" and needs_live_search(message))
+    if should_search:
         # External urllib calls run in a worker thread, not on the ASGI loop.
         live_data = await asyncio.to_thread(live_search, message)
 
@@ -4604,6 +4647,15 @@ async def chat(request: ChatRequest):
         request.response_style,
         STYLES["Balanced"]
     )
+
+    response_formats = {
+        "Natural": "Use clear natural prose and choose the most readable structure.",
+        "Bullets": "Prefer concise bullet points and descriptive headings where useful.",
+        "Step-by-step": "Explain processes in numbered, sequential steps. Show intermediate reasoning summaries, not private chain-of-thought.",
+        "Table": "Use a Markdown table when it genuinely improves comparison or structured information; otherwise use concise prose."
+    }
+    response_format = request.response_format if request.response_format in response_formats else "Natural"
+    temperature = max(0.1, min(1.0, float(request.temperature or 0.7)))
 
     document_context = "No document is currently uploaded."
     if request.document_text.strip():
@@ -4628,6 +4680,15 @@ Personality:
 
 Response style:
 {style}
+
+Answer format preference:
+{response_formats[response_format]}
+
+Creativity setting:
+Use a temperature setting of {temperature:.1f}. Prioritize correctness over novelty, especially for factual, academic, coding, and safety-related answers.
+
+Web search preference:
+{web_search_mode}. Only rely on live web information when it is supplied in the Live information section. If search is Off and no live data is supplied, do not imply that you checked current information.
 
 Custom instructions:
 {request.custom_instructions.strip()}
@@ -4711,7 +4772,7 @@ Uploaded document:
                         "messages": messages,
                         "max_tokens": chat_output_tokens,
                         "stream": True,
-                        "temperature": 0.7
+                        "temperature": temperature
                     }).encode("utf-8")
 
                     req = URLRequest(
@@ -4805,7 +4866,7 @@ Uploaded document:
         )
 
     try:
-        reply = gemini_chat_completion(messages, chat_output_tokens)
+        reply = gemini_chat_completion(messages, chat_output_tokens, temperature=temperature)
         if not reply:
             reply = "Sorry, I could not generate a response."
         return {"reply": reply}
