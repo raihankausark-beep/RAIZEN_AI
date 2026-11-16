@@ -2472,6 +2472,9 @@ function loadPreferences() {
     document.getElementById("responseStyle").value=localStorage.getItem("raizen_response_style_" + key)||"Balanced";
     const legacy=localStorage.getItem("raizen_custom_instructions");
     if(legacy && localStorage.getItem("raizen_custom_instructions_" + key)===null) localStorage.setItem("raizen_custom_instructions_" + key,legacy);
+    fetch("/api/memory?token="+encodeURIComponent(authToken)).then(response=>response.ok?response.json():null).then(data=>{
+        if(data && data.ok) localStorage.setItem("raizen_memory_notes_" + key,data.content||"");
+    }).catch(error=>console.warn("Account memory sync unavailable.",error));
 }
 function toggleVoiceInput() {
     const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition; const button=document.getElementById("voiceInputButton");
