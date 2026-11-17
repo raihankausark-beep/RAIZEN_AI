@@ -2035,7 +2035,7 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
     <textarea id="memoryNotes" rows="4" placeholder="Add preferences or facts you want RAIZEN to remember. Avoid sensitive information."></textarea>
     <label for="customInstructions">Custom instructions</label>
     <textarea id="customInstructions" rows="4" placeholder="How should RAIZEN respond?"></textarea>
-    <p class="preferences-hint">Stored in this browser for this signed-in account. You can edit or clear these notes anytime.</p>
+    <p class="preferences-hint">Saved notes sync to this signed-in account across devices when the account database is available. Notes are user-written, not automatically extracted from chats. Avoid adding passwords or sensitive information; you can edit or clear them anytime.</p>
     <div class="preferences-actions"><button type="button" onclick="clearPersonalMemory()">Clear saved notes</button><button type="button" class="preferences-save" onclick="savePreferences()">Save preferences</button></div>
   </div>
 </div>
@@ -2782,8 +2782,46 @@ function cycleTheme() {
     applyRaizenTheme();
     alert("RAIZEN theme: "+raizenCurrentTheme.charAt(0).toUpperCase()+raizenCurrentTheme.slice(1));
 }
-function openCodeStudio() { const modal=document.getElementById("codeStudioModal"); if(modal){modal.classList.add("open");modal.setAttribute("aria-hidden","false");} }
+function openCodeStudio() { renderCodeSnippets(); const modal=document.getElementById("codeStudioModal"); if(modal){modal.classList.add("open");modal.setAttribute("aria-hidden","false");} }
 function closeCodeStudio() { const modal=document.getElementById("codeStudioModal"); if(modal){modal.classList.remove("open");modal.setAttribute("aria-hidden","true");} }
+function codeSnippetKey() { return "raizen_code_snippets_" + String(loggedInUsername || "guest").toLowerCase(); }
+function getCodeSnippets() {
+    try { const items=JSON.parse(localStorage.getItem(codeSnippetKey())||"[]"); return Array.isArray(items)?items.filter(item=>item&&typeof item.code==="string"):[]; }
+    catch(error) { return []; }
+}
+function renderCodeSnippets() {
+    const select=document.getElementById("savedCodeSnippets"); if(!select)return;
+    select.innerHTML='<option value="">Choose a saved snippet…</option>';
+    getCodeSnippets().forEach(item=>{const option=document.createElement("option");option.value=String(item.id);option.textContent=String(item.title||"Untitled")+" · "+String(item.language||"Text");select.appendChild(option);});
+}
+function saveCodeSnippet() {
+    const code=document.getElementById("codeInput").value;
+    if(!code.trim()){alert("Add code before saving a snippet.");return;}
+    if(code.length>50000){alert("A snippet must be 50,000 characters or fewer.");return;}
+    const title=window.prompt("Name this code snippet:", "My "+document.getElementById("codeLanguage").value+" snippet");
+    if(title===null)return;
+    if(!title.trim()){alert("A snippet name cannot be empty.");return;}
+    const items=getCodeSnippets();
+    items.unshift({id:Date.now().toString()+Math.random().toString(36).slice(2,7),title:title.trim().slice(0,60),language:document.getElementById("codeLanguage").value,code,updatedAt:Date.now()});
+    localStorage.setItem(codeSnippetKey(),JSON.stringify(items.slice(0,30)));
+    renderCodeSnippets();
+    alert("Snippet saved in this browser for this account.");
+}
+function loadCodeSnippet() {
+    const id=document.getElementById("savedCodeSnippets").value;
+    const item=getCodeSnippets().find(entry=>String(entry.id)===id);
+    if(!item){alert("Choose a saved snippet first.");return;}
+    document.getElementById("codeLanguage").value=item.language||"Other";
+    document.getElementById("codeInput").value=item.code;
+    updateCodeMetrics();
+}
+function deleteCodeSnippet() {
+    const id=document.getElementById("savedCodeSnippets").value;
+    if(!id){alert("Choose a saved snippet first.");return;}
+    if(!confirm("Delete this saved snippet from this browser?"))return;
+    localStorage.setItem(codeSnippetKey(),JSON.stringify(getCodeSnippets().filter(item=>String(item.id)!==id)));
+    renderCodeSnippets();
+}
 function updateCodeMetrics() {
     const code = document.getElementById("codeInput")?.value || "";
     const lines = code ? code.split(/\\r?\\n/).length : 0;
@@ -2933,6 +2971,43 @@ function openResearchWorkspace() {
     refreshResearchWorkspace();
 }
 function closeResearchWorkspace() { const modal=document.getElementById("researchWorkspaceModal");if(modal){modal.classList.remove("open");modal.setAttribute("aria-hidden","true");} }
+function openDocumentCreator() {
+    const modal=document.getElementById("documentCreatorModal");
+    if(modal){modal.classList.add("open");modal.setAttribute("aria-hidden","false");}
+    if(!document.getElementById("documentTitleInput").value.trim())document.getElementById("documentTitleInput").value=makeChatTitle(chatHistory)||"RAIZEN Document";
+}
+function closeDocumentCreator() { const modal=document.getElementById("documentCreatorModal");if(modal){modal.classList.remove("open");modal.setAttribute("aria-hidden","true");} }
+function fillDocumentFromCurrentChat() {
+    if(!Array.isArray(chatHistory)||!chatHistory.length){alert("There is no current chat to insert.");return;}
+    document.getElementById("documentTitleInput").value=makeChatTitle(chatHistory)||"RAIZEN Conversation";
+    document.getElementById("documentBodyInput").value=chatHistory.map(item=>(item.role==="user"?"YOU":"RAIZEN")+"\n"+String(item.content||"")).join("\n\n------------------------------\n\n").slice(0,100000);
+}
+async function exportCreatedDocument() {
+    const title=document.getElementById("documentTitleInput").value.trim().slice(0,100);
+    const content=document.getElementById("documentBodyInput").value.trim();
+    const format=document.getElementById("documentExportFormat").value;
+    if(!title||!content){alert("Enter a document title and some content first.");return;}
+    if(content.length>100000){alert("Document content must be 100,000 characters or fewer.");return;}
+    const safeName=title.replace(/[^a-z0-9-_]+/gi,"-").replace(/^-+|-+$/g,"").slice(0,50)||"raizen-document";
+    if(format==="txt"){
+        const blob=new Blob([title+"\n\n"+content],{type:"text/plain;charset=utf-8"});
+        const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download=safeName+".txt";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return;
+    }
+    if(format==="pdf"){
+        const printWindow=window.open("","_blank");
+        if(!printWindow){alert("Please allow pop-ups to create a PDF.");return;}
+        printWindow.document.write("<!doctype html><html><head><title>"+escapeHtml(title)+"</title><style>body{font:14px/1.65 Arial,sans-serif;max-width:850px;margin:35px auto;padding:0 24px;color:#171717;white-space:pre-wrap;overflow-wrap:anywhere}h1{font-size:22px;margin-bottom:24px}@media print{body{margin:15mm auto}}</style></head><body><h1>"+escapeHtml(title)+"</h1>"+escapeHtml(content)+"</body></html>");
+        printWindow.document.close();printWindow.onload=()=>printWindow.print();return;
+    }
+    const button=document.querySelector("#documentCreatorModal .preferences-save");
+    if(button){button.disabled=true;button.textContent="Creating DOCX…";}
+    try{
+        const response=await fetch("/api/documents/docx",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:authToken,title,content})});
+        if(!response.ok){let detail="Could not create the Word document.";try{const data=await response.json();detail=data.error||detail;}catch(error){}throw new Error(detail);}
+        const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download=safeName+".docx";document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
+    }catch(error){alert(error.message||"DOCX export failed.");}
+    finally{if(button){button.disabled=false;button.textContent="Export document";}}
+}
 function refreshResearchWorkspace() {
     const name=document.getElementById("researchDocumentName"),meta=document.getElementById("researchDocumentMeta");
     if(name)name.textContent=documentName||"No document loaded";
@@ -2948,14 +3023,27 @@ function sendResearchQuestion() {
     usePrompt("Use the uploaded document as your primary source. Answer this research request: "+question+" Cite section headings or quote short relevant phrases when available. Clearly state when the document does not contain the answer.");
     window.sendMessage();
 }
-function openActivityDashboard() {
+async function openActivityDashboard() {
     const chats=Array.isArray(savedChats)?savedChats:[];
     const messages=chats.reduce((sum,chat)=>sum+(Array.isArray(chat.messages)?chat.messages.length:0),0);
     document.getElementById("activityChats").textContent=chats.length;
     document.getElementById("activityMessages").textContent=messages;
     document.getElementById("activityPinned").textContent=chats.filter(chat=>chat.pinned).length;
     document.getElementById("activityFolders").textContent=getChatFolders().length;
+    ["activityChats7d","activityUploads7d","activityVision7d","activityImages7d"].forEach(id=>{const node=document.getElementById(id);if(node)node.textContent="…";});
     const modal=document.getElementById("activityModal"); if(modal){modal.classList.add("open");modal.setAttribute("aria-hidden","false");}
+    try{
+        const response=await fetch("/api/activity?token="+encodeURIComponent(authToken));
+        const data=await response.json();
+        if(!response.ok||!data.ok)throw new Error(data.error||"Activity totals are unavailable.");
+        const counts=data.counts||{};
+        document.getElementById("activityChats7d").textContent=Number(counts.chat||0).toLocaleString();
+        document.getElementById("activityUploads7d").textContent=Number(counts.upload||0).toLocaleString();
+        document.getElementById("activityVision7d").textContent=Number(counts.vision||0).toLocaleString();
+        document.getElementById("activityImages7d").textContent=(Number(counts.image_generation||0)+Number(counts.image_edit||0)).toLocaleString();
+    }catch(error){
+        ["activityChats7d","activityUploads7d","activityVision7d","activityImages7d"].forEach(id=>{const node=document.getElementById(id);if(node)node.textContent="—";});
+    }
 }
 function closeActivityDashboard() { const modal=document.getElementById("activityModal"); if(modal){modal.classList.remove("open");modal.setAttribute("aria-hidden","true");} }
 
