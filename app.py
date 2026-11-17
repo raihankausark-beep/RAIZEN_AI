@@ -53,6 +53,8 @@ _RATE_LIMITS = {
     ("POST", "/edit-image"): (600, 4, "Too many image editing requests. Please wait before trying again."),
     ("PUT", "/api/memory"): (60, 30, "Too many memory updates. Please slow down."),
     ("DELETE", "/api/memory"): (60, 30, "Too many memory updates. Please slow down."),
+    ("GET", "/api/activity"): (60, 30, "Too many activity requests. Please slow down."),
+    ("POST", "/api/documents/docx"): (600, 10, "Too many document exports. Please wait before exporting again."),
     ("GET", "/admin/api/users"): (60, 30, "Too many admin requests. Please slow down."),
     ("POST", "/admin/api/user-status"): (60, 20, "Too many admin updates. Please slow down."),
 }
@@ -4570,6 +4572,41 @@ def record_usage_event(username: str, event_type: str):
         print("USAGE ANALYTICS NOTICE:", type(error).__name__)
 
 
+@app.get("/api/activity")
+async def account_activity(token: str = ""):
+    username = await asyncio.to_thread(get_authenticated_username, token)
+    if not username:
+        return JSONResponse({"ok": False, "error": "Please log in to view activity."}, status_code=401)
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT event_type, COUNT(*) AS total
+                       FROM raizen_usage_events
+                       WHERE username_key = %s
+                         AND created_at >= NOW() - INTERVAL '7 days'
+                       GROUP BY event_type""",
+                    (username.strip().lower(),)
+                )
+                rows = cur.fetchall()
+        counts = {str(row["event_type"]): int(row["total"]) for row in rows}
+        return {
+            "ok": True,
+            "period": "last_7_days",
+            "counts": {
+                "chat": counts.get("chat", 0),
+                "upload": counts.get("upload", 0),
+                "vision": counts.get("vision", 0),
+                "image_generation": counts.get("image_generation", 0),
+                "image_edit": counts.get("image_edit", 0),
+                "document_export": counts.get("document_export", 0)
+            }
+        }
+    except Exception as error:
+        print("ACCOUNT ACTIVITY ERROR:", type(error).__name__)
+        return JSONResponse({"ok": False, "error": "Account activity is temporarily unavailable."}, status_code=503)
+
+
 @app.get("/api/workspace/overview")
 async def workspace_overview(request: Request, token: str = ""):
     if not is_admin_request(request):
@@ -4666,9 +4703,59 @@ async def clear_user_memory(token: str = ""):
         return JSONResponse({"error": "Could not clear saved memory right now."}, status_code=503)
 
 
+class DocumentExportRequest(BaseModel):
+    token: str = ""
+    title: str
+    content: str
+
+
+@app.post("/api/documents/docx")
+async def export_docx(request: DocumentExportRequest):
+    username = await asyncio.to_thread(get_authenticated_username, request.token)
+    if not username:
+        return JSONResponse({"error": "Please log in to export documents."}, status_code=401)
+    title = (request.title or "").strip()[:100]
+    content = (request.content or "").strip()
+    if not title or not content:
+        return JSONResponse({"error": "A title and document content are required."}, status_code=400)
+    if len(content) > 100000:
+        return JSONResponse({"error": "Document content must be 100,000 characters or fewer."}, status_code=413)
+    try:
+        doc = Document()
+        doc.add_heading(title, 0)
+        for line in content.splitlines():
+            clean = line.rstrip()
+            if not clean:
+                doc.add_paragraph("")
+            elif clean.startswith("# "):
+                doc.add_heading(clean[2:].strip(), level=1)
+            elif clean.startswith("## "):
+                doc.add_heading(clean[3:].strip(), level=2)
+            elif clean.startswith(("- ", "* ")):
+                doc.add_paragraph(clean[2:].strip(), style="List Bullet")
+            elif re.match(r"^\d+[.)]\s+", clean):
+                doc.add_paragraph(re.sub(r"^\d+[.)]\s+", "", clean), style="List Number")
+            else:
+                doc.add_paragraph(clean)
+        buffer = BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+        await asyncio.to_thread(record_usage_event, username, "document_export")
+        safe_title = re.sub(r"[^A-Za-z0-9_-]+", "-", title).strip("-")[:50] or "raizen-document"
+        return StreamingResponse(
+            buffer,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="{safe_title}.docx"'}
+        )
+    except Exception as error:
+        print("DOCX EXPORT ERROR:", type(error).__name__)
+        return JSONResponse({"error": "Could not create the Word document right now."}, status_code=500)
+
+
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...), token: str = Form("")):
-    if not await asyncio.to_thread(get_authenticated_username, token):
+    username = await asyncio.to_thread(get_authenticated_username, token)
+    if not username:
         return {"error": "Please log in to upload documents."}
     filename = file.filename or "document"
     if not filename.lower().endswith((".pdf", ".docx", ".txt")):
@@ -4682,6 +4769,7 @@ async def upload_file(file: UploadFile = File(...), token: str = Form("")):
         text = extract_document_text(filename, raw_bytes)
         if not text:
             return {"error": "I could not extract readable text from this file."}
+        await asyncio.to_thread(record_usage_event, username, "upload")
 
         return {
             "filename": filename,
@@ -4695,7 +4783,8 @@ async def upload_file(file: UploadFile = File(...), token: str = Form("")):
 
 @app.post("/vision")
 async def vision(file: UploadFile = File(...), question: str = Form(""), token: str = Form("")):
-    if not await asyncio.to_thread(get_authenticated_username, token):
+    username = await asyncio.to_thread(get_authenticated_username, token)
+    if not username:
         return {"error": "Please log in to use Vision."}
     filename = file.filename or "image"
     content_type = file.content_type or ""
@@ -4761,6 +4850,7 @@ async def vision(file: UploadFile = File(...), question: str = Form(""), token: 
 
         if not reply:
             return {"error": "The vision model returned an empty response."}
+        await asyncio.to_thread(record_usage_event, username, "vision")
 
         return {
             "reply": reply,
@@ -5165,7 +5255,8 @@ class ImageRequest(BaseModel):
 
 @app.post("/generate-image")
 async def generate_image(request: ImageRequest):
-    if not await asyncio.to_thread(get_authenticated_username, request.token):
+    username = await asyncio.to_thread(get_authenticated_username, request.token)
+    if not username:
         return {"error": "Please log in to create images."}
     prompt = request.prompt.strip()
 
@@ -5188,6 +5279,7 @@ async def generate_image(request: ImageRequest):
         buffer = BytesIO()
         image.save(buffer, format="PNG")
         encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        await asyncio.to_thread(record_usage_event, username, "image_generation")
 
         return {
             "image": "data:image/png;base64," + encoded,
@@ -5212,7 +5304,8 @@ async def edit_image(
     prompt: str = Form(...),
     token: str = Form("")
 ):
-    if not await asyncio.to_thread(get_authenticated_username, token):
+    username = await asyncio.to_thread(get_authenticated_username, token)
+    if not username:
         return {"error": "Please log in to edit images."}
 
     prompt = prompt.strip()
@@ -5239,6 +5332,7 @@ async def edit_image(
         buffer = BytesIO()
         edited.save(buffer, format="PNG")
         encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        await asyncio.to_thread(record_usage_event, username, "image_edit")
 
         return {
             "image": "data:image/png;base64," + encoded,
