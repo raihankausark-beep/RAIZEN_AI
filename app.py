@@ -626,8 +626,27 @@ PERSONALITIES = {
     "Teacher": "Explain clearly like a good teacher using simple examples.",
     "Coding Assistant": "Focus on accurate programming help and practical debugging.",
     "Learning Coach": "Be a patient, interactive learning coach. Adapt explanations to the learner level, check understanding, use retrieval practice, and give constructive feedback.",
-    "Professional": "Use a professional, clear and structured communication style."
+    "Professional": "Use a professional, clear and structured communication style.",
+    "Researcher": "Be an evidence-focused research assistant. Separate verified facts from interpretation, explain uncertainty, compare credible viewpoints, and never invent citations or sources.",
+    "Creative Writer": "Help create original, engaging writing. Match the requested audience, tone, format, and length while avoiding copied passages.",
+    "Interview Coach": "Act as a practical interview coach. Ask one question at a time, wait for the answer, then give specific constructive feedback and a stronger example."
 }
+
+def route_personality(message):
+    """Choose a response persona from the task; this does not switch AI providers."""
+    text = (message or "").lower()
+    if re.search(r"\\b(debug|compile|compiler|code|program|python|javascript|java|c language|sql|error in my|fix this code)\\b", text):
+        return "Coding Assistant"
+    if re.search(r"\\b(quiz|revise|revision|study plan|teach me|explain simply|learn|flashcards|exam preparation)\\b", text):
+        return "Learning Coach"
+    if re.search(r"\\b(research|compare sources|literature review|evidence|analyse data|analyze data|case study|fact check)\\b", text):
+        return "Researcher"
+    if re.search(r"\\b(story|poem|creative|script|caption|blog|write a|rewrite|speech)\\b", text):
+        return "Creative Writer"
+    if re.search(r"\\b(interview|mock interview|hr round|technical round|tell me about yourself)\\b", text):
+        return "Interview Coach"
+    return "Friendly"
+
 
 STYLES = {
     "Short": "Keep answers concise and direct.",
@@ -1976,7 +1995,7 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
       </div>
 
       <div class="controls">
-        <select id="personality"><option>Friendly</option><option>Teacher</option><option>Coding Assistant</option><option>Learning Coach</option><option>Professional</option></select>
+        <select id="personality"><option>Friendly</option><option>Auto (Smart Router)</option><option>Teacher</option><option>Coding Assistant</option><option>Learning Coach</option><option>Researcher</option><option>Creative Writer</option><option>Interview Coach</option><option>Professional</option></select>
         <select id="responseStyle"><option>Short</option><option selected>Balanced</option><option>Detailed</option></select>
       </div>
 
@@ -1997,7 +2016,7 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
   <div class="preferences-card" role="dialog" aria-modal="true" aria-labelledby="preferencesTitle">
     <div class="preferences-heading"><strong id="preferencesTitle">RAIZEN preferences</strong><button type="button" onclick="closePreferences()" aria-label="Close preferences">✕</button></div>
     <label for="savedPersonality">Assistant personality</label>
-    <select id="savedPersonality"><option>Friendly</option><option>Teacher</option><option>Coding Assistant</option><option>Learning Coach</option><option>Professional</option></select>
+    <select id="savedPersonality"><option>Friendly</option><option>Auto (Smart Router)</option><option>Teacher</option><option>Coding Assistant</option><option>Learning Coach</option><option>Researcher</option><option>Creative Writer</option><option>Interview Coach</option><option>Professional</option></select>
     <label for="savedResponseStyle">Response style</label>
     <select id="savedResponseStyle"><option>Short</option><option>Balanced</option><option>Detailed</option></select>
     <div class="control-group">
@@ -4730,8 +4749,13 @@ async def chat(request: ChatRequest):
         # External urllib calls run in a worker thread, not on the ASGI loop.
         live_data = await asyncio.to_thread(live_search, message)
 
+    selected_personality = (
+        route_personality(message)
+        if request.personality == "Auto (Smart Router)"
+        else request.personality
+    )
     personality = PERSONALITIES.get(
-        request.personality,
+        selected_personality,
         PERSONALITIES["Friendly"]
     )
 
@@ -4761,19 +4785,22 @@ async def chat(request: ChatRequest):
         )
 
     learning_coach_guidelines = ""
-    if request.personality == "Learning Coach":
+    if selected_personality == "Learning Coach":
         learning_coach_guidelines = """
 Learning Coach operating guidelines:
 - Teach for understanding, not just answer completion. Adapt to the learner level.
 - Break difficult concepts into small steps, define key terms, and use relatable examples.
 - Use active recall: ask one focused question at a time, wait for the learner response, then give feedback.
 - For quizzes, track score only within the current conversation; never claim persistent progress tracking.
+- Build a small learning loop: explain one concept, give one worked example, ask one checkpoint question, then adapt to the answer.
+- At natural stopping points, provide a brief session recap with concepts covered, demonstrated strengths, and topics still needing practice. Base this only on messages in the current conversation.
+- Treat mastery estimates as tentative; do not infer ability from one answer or claim long-term progress tracking.
 - For exam preparation, distinguish key concepts, common mistakes, and useful practice. Never promise grades or outcomes.
 - If the learner is confused, try a different explanation rather than repeating the same wording.
 """
 
     coding_assistant_guidelines = ""
-    if request.personality == "Coding Assistant":
+    if selected_personality == "Coding Assistant":
         coding_assistant_guidelines = """
 Coding Assistant advanced operating guidelines:
 - Act as a careful programming tutor and code reviewer. Support the user's actual language, skill level, and stated environment.
