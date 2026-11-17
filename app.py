@@ -2759,8 +2759,9 @@ function toggleVoiceMode() {
     if(!raizenVoiceMode && "speechSynthesis" in window) window.speechSynthesis.cancel();
     if(raizenVoiceMode) speakRaizenReply("Voice mode is on. New replies will be read aloud.");
 }
-function speakRaizenReply(text) {
-    if(!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance==="undefined") return;
+function speakRaizenReply(text, onComplete) {
+    const finish=()=>{if(typeof onComplete==="function")onComplete();};
+    if(!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance==="undefined"){finish();return;}
     window.speechSynthesis.cancel();
     const clean=String(text||"").replace(/\x60\x60\x60[\s\S]*?\x60\x60\x60/g,"Code block omitted from voice reply.").replace(/https?:\/\/\S+/g,"link").slice(0,12000);
     const utterance=new SpeechSynthesisUtterance(clean);
@@ -2768,6 +2769,10 @@ function speakRaizenReply(text) {
     const selectedVoiceLanguage=localStorage.getItem("raizen_voice_language_"+voiceKey)||"auto";
     if(selectedVoiceLanguage!=="auto") utterance.lang=selectedVoiceLanguage;
     utterance.rate=Number(localStorage.getItem("raizen_voice_rate_"+voiceKey)||"1"); utterance.pitch=1;
+    let completed=false;
+    const completeOnce=()=>{if(completed)return;completed=true;finish();};
+    utterance.onend=completeOnce;
+    utterance.onerror=completeOnce;
     window.speechSynthesis.speak(utterance);
 }
 function applyRaizenTheme() {
@@ -3852,7 +3857,9 @@ window.sendMessage = async function sendMessage() {
         regen.onclick = function() { regenerateLastResponse(); };
         actions.appendChild(regen);
         lastNormalAssistantMessage.appendChild(actions);
-        if (raizenVoiceMode) speakRaizenReply(reply);
+        if (raizenVoiceMode) speakRaizenReply(reply, () => {
+            if (raizenVoiceMode && !window.raizenRecognition) toggleVoiceInput();
+        });
 
         chatHistory.push({
             role: "assistant",
