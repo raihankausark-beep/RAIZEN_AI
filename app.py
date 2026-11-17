@@ -1534,6 +1534,11 @@ button{color:inherit}
 .preferences-actions .preferences-save{background:#315f9f;border-color:#477fc8;color:white}
 @media(max-width:650px){
  .message{overflow-wrap:anywhere}
+ .composer{width:100%;max-width:100%}
+ .file-panel,.vision-panel{min-width:0;overflow-wrap:anywhere}
+ .controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+ .controls select{min-width:0;width:100%}
+ .preferences-card{width:calc(100vw - 20px);max-height:88dvh;overflow-y:auto}
  .input-area{gap:5px}
  .circle-btn,#sendButton{width:39px;height:39px;flex-basis:39px;font-size:18px}
  .history-drawer{padding:18px 14px}
@@ -1956,11 +1961,11 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
     <div class="composer">
       <div class="tool-strip unified-tools">
         <button class="tool-chip" onclick="document.getElementById('fileInput').click()">＋ Attach file or image</button>
-        <span class="tool-hint">Ask naturally. Attach a file whenever you need help with it.</span>
+        <span class="tool-hint">Ask naturally. Attach up to 3 documents to summarize or compare.</span>
       </div>
 
       <div class="file-panel">
-        <input id="fileInput" class="file-input" type="file" accept=".pdf,.docx,.txt,image/png,image/jpeg,image/webp">
+        <input id="fileInput" class="file-input" type="file" multiple accept=".pdf,.docx,.txt,image/png,image/jpeg,image/webp">
         <span id="fileName" class="file-name">No attachment selected</span>
         <button class="control" onclick="clearDocument()">Remove</button>
       </div>
@@ -2000,6 +2005,10 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
       <input id="creativityControl" type="range" min="0.1" max="1" step="0.1" value="0.7" oninput="updateCreativityLabel()">
       <p class="preferences-hint">Lower values are more consistent; higher values allow more varied wording. This does not guarantee better factual accuracy.</p>
     </div>
+    <label for="voiceLanguage">Voice input language</label>
+    <select id="voiceLanguage"><option value="auto">Auto-detect (browser language)</option><option value="en-IN">English (India)</option><option value="hi-IN">Hindi</option><option value="or-IN">Odia</option><option value="en-US">English (US)</option></select>
+    <label for="voiceRate">Voice playback speed</label>
+    <select id="voiceRate"><option value="0.85">Slow</option><option value="1" selected>Normal</option><option value="1.15">Fast</option></select>
     <label for="webSearchMode">Web search</label>
     <select id="webSearchMode"><option>Auto</option><option>On</option><option>Off</option></select>
     <label for="responseFormat">Answer format</label>
@@ -2288,89 +2297,68 @@ let documentName = "";
 let visionFile = null;
 
 document.getElementById("fileInput").addEventListener("change", async function() {
-    const file = this.files[0];
-    if (!file) return;
-
-    const lower = file.name.toLowerCase();
-    const isImage = ["image/png", "image/jpeg", "image/webp"].includes(file.type)
-        || [".png", ".jpg", ".jpeg", ".webp"].some(ext => lower.endsWith(ext));
-
-    if (isImage) {
+    const selectedFiles = Array.from(this.files || []);
+    if (!selectedFiles.length) return;
+    if (selectedFiles.length > 3) {
+        displayMessage("assistant", "⚠️ Please attach a maximum of 3 documents at a time.");
+        this.value = ""; return;
+    }
+    const imageFiles = selectedFiles.filter(file => ["image/png","image/jpeg","image/webp"].includes(file.type)
+        || [".png",".jpg",".jpeg",".webp"].some(ext => file.name.toLowerCase().endsWith(ext)));
+    if (imageFiles.length) {
+        if (selectedFiles.length !== 1) {
+            displayMessage("assistant", "⚠️ Attach one image at a time. Images cannot be combined with documents.");
+            this.value = ""; return;
+        }
+        const file = imageFiles[0];
         if (file.size > 12 * 1024 * 1024) {
             displayMessage("assistant", "⚠️ Image is too large. Maximum size is 12 MB.");
-            this.value = "";
-            return;
+            this.value = ""; return;
         }
-
-        documentText = "";
-        documentName = "";
-        visionFile = file;
-
-        const fileName = document.getElementById("fileName");
-        const visionName = document.getElementById("visionName");
-
-        if (fileName) fileName.textContent = "🖼️ " + file.name + " ready";
-        if (visionName) visionName.textContent = "🖼️ Image attached";
-
-        displayMessage(
-            "assistant",
-            "🖼️ " + file.name +
-            " is ready. Ask RAIZEN to analyze or edit it — e.g. “remove the background”, “make it clearer”, or “change the lighting”."
-        );
-
+        documentText = ""; documentName = ""; visionFile = file;
+        document.getElementById("fileName").textContent = "No document selected";
+        document.getElementById("visionName").textContent = "🖼️ " + file.name + " ready";
+        displayMessage("assistant", "🖼️ " + file.name + " is ready. Ask RAIZEN to analyze or edit it.");
         return;
     }
-
-    if (![".pdf", ".docx", ".txt"].some(ext => lower.endsWith(ext))) {
-        displayMessage(
-            "assistant",
-            "⚠️ Please attach a PDF, DOCX, TXT, PNG, JPG/JPEG, or WEBP file."
-        );
-        this.value = "";
-        return;
+    const validFiles = selectedFiles.every(file => [".pdf",".docx",".txt"].some(ext => file.name.toLowerCase().endsWith(ext)));
+    const totalBytes = selectedFiles.reduce((sum,file)=>sum+file.size,0);
+    if (!validFiles) {
+        displayMessage("assistant", "⚠️ Supported documents: PDF, DOCX, and TXT. Attach up to 3 documents.");
+        this.value = ""; return;
     }
-
+    if (totalBytes > 50 * 1024 * 1024) {
+        displayMessage("assistant", "⚠️ Combined document size must be 50 MB or less.");
+        this.value = ""; return;
+    }
     visionFile = null;
     document.getElementById("visionName").textContent = "No image selected";
-
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("token", authToken);
-    document.getElementById("fileName").textContent =
-        "Reading " + file.name + "...";
-
+    document.getElementById("fileName").textContent = "Reading " + selectedFiles.length + " document(s)...";
+    const extracted = [];
     try {
-        const response = await fetch("/upload", {
-            method: "POST",
-            body: formData
-        });
-
-        const data = await response.json();
-
-        if (!response.ok || data.error) {
-            throw new Error(data.error || "Upload failed.");
+        for (const file of selectedFiles) {
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("token", authToken);
+            const response = await fetch("/upload", {method:"POST",body:formData});
+            const data = await response.json();
+            if (!response.ok || data.error) throw new Error(data.error || ("Could not read " + file.name));
+            extracted.push({name:data.filename||file.name,text:data.text||""});
         }
-
-        documentText = data.text || "";
-        documentName = data.filename || file.name;
-
-        document.getElementById("fileName").textContent =
-            "📄 " + documentName + " ready";
+        const combined = extracted.map((doc,index)=>"DOCUMENT "+(index+1)+": "+doc.name+"\n\n"+doc.text).join("\n\n==============================\n\n");
+        if (combined.length > 110000) throw new Error("Combined extracted text is too large. Choose smaller documents (maximum 110,000 characters total).");
+        documentText = combined;
+        documentName = extracted.map(doc=>doc.name).join(", ");
+        document.getElementById("fileName").textContent = "📚 " + extracted.length + " document(s) ready";
         refreshResearchWorkspace();
-
-        displayMessage(
-            "assistant",
-            "📄 " + documentName +
-            " is ready. Just ask me what you want to do with it."
-        );
+        displayMessage("assistant", "📚 " + extracted.length + " document(s) are ready. Ask for summaries, comparisons, differences, or questions across all selected documents.");
     } catch (error) {
-        documentText = "";
-        documentName = "";
+        documentText = ""; documentName = "";
         document.getElementById("fileName").textContent = "Upload failed";
         displayMessage("assistant", "⚠️ " + error.message);
+        this.value = "";
     }
 });
-
 function clearDocument() {
     documentText = "";
     documentName = "";
@@ -2632,6 +2620,8 @@ async function openPreferences() {
     document.getElementById("savedResponseStyle").value = localStorage.getItem("raizen_response_style_" + key) || "Balanced";
     document.getElementById("creativityControl").value = localStorage.getItem("raizen_creativity_" + key) || "0.7";
     document.getElementById("webSearchMode").value = localStorage.getItem("raizen_web_search_mode_" + key) || "Auto";
+    document.getElementById("voiceLanguage").value = localStorage.getItem("raizen_voice_language_" + key) || "auto";
+    document.getElementById("voiceRate").value = localStorage.getItem("raizen_voice_rate_" + key) || "1";
     document.getElementById("responseFormat").value = localStorage.getItem("raizen_response_format_" + key) || "Natural";
     document.getElementById("useSavedMemory").checked = localStorage.getItem("raizen_use_memory_" + key) !== "false";
     updateCreativityLabel();
@@ -2658,6 +2648,8 @@ async function savePreferences() {
     localStorage.setItem("raizen_response_style_" + key,document.getElementById("savedResponseStyle").value);
     localStorage.setItem("raizen_creativity_" + key,String(Math.max(0.1,Math.min(1,Number(document.getElementById("creativityControl").value)||0.7))));
     localStorage.setItem("raizen_web_search_mode_" + key,document.getElementById("webSearchMode").value);
+    localStorage.setItem("raizen_voice_language_" + key,document.getElementById("voiceLanguage").value);
+    localStorage.setItem("raizen_voice_rate_" + key,document.getElementById("voiceRate").value);
     localStorage.setItem("raizen_response_format_" + key,document.getElementById("responseFormat").value);
     localStorage.setItem("raizen_use_memory_" + key,document.getElementById("useSavedMemory").checked ? "true" : "false");
     localStorage.setItem("raizen_memory_notes_" + key,memoryContent);
@@ -2707,7 +2699,10 @@ function toggleVoiceInput() {
     const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition; const button=document.getElementById("voiceInputButton");
     if(!SpeechRecognition){alert("Voice input is not supported in this browser. Try a supported browser with microphone permission.");return;}
     if(window.raizenRecognition){window.raizenRecognition.stop();window.raizenRecognition=null;if(button)button.textContent="🎙";return;}
-    const recognition=new SpeechRecognition(); window.raizenRecognition=recognition; recognition.lang=navigator.language||"en-IN"; recognition.interimResults=true; recognition.continuous=false;
+    const recognition=new SpeechRecognition(); window.raizenRecognition=recognition;
+    const selectedVoiceLanguage=localStorage.getItem("raizen_voice_language_"+loggedInUsername.toLowerCase())||"auto";
+    recognition.lang=selectedVoiceLanguage==="auto"?(navigator.language||"en-IN"):selectedVoiceLanguage;
+    recognition.interimResults=true; recognition.continuous=false;
     if(button)button.textContent="⏹";
     const status=document.getElementById("voiceAssistantStatus");
     if(status)status.textContent="Listening…";
@@ -2751,7 +2746,11 @@ function speakRaizenReply(text) {
     if(!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance==="undefined") return;
     window.speechSynthesis.cancel();
     const clean=String(text||"").replace(/\x60\x60\x60[\s\S]*?\x60\x60\x60/g,"Code block omitted from voice reply.").replace(/https?:\/\/\S+/g,"link").slice(0,12000);
-    const utterance=new SpeechSynthesisUtterance(clean); utterance.rate=1; utterance.pitch=1;
+    const utterance=new SpeechSynthesisUtterance(clean);
+    const voiceKey=loggedInUsername.toLowerCase();
+    const selectedVoiceLanguage=localStorage.getItem("raizen_voice_language_"+voiceKey)||"auto";
+    if(selectedVoiceLanguage!=="auto") utterance.lang=selectedVoiceLanguage;
+    utterance.rate=Number(localStorage.getItem("raizen_voice_rate_"+voiceKey)||"1"); utterance.pitch=1;
     window.speechSynthesis.speak(utterance);
 }
 function applyRaizenTheme() {
@@ -4753,9 +4752,11 @@ async def chat(request: ChatRequest):
     document_context = "No document is currently uploaded."
     if request.document_text.strip():
         document_context = (
-            "An uploaded document is available. Use its extracted text as the "
-            "main source for questions specifically about that document. "
-            "If the answer is not present, say so clearly.\n\nDOCUMENT TEXT:\n"
+            "One or more uploaded documents are available. Use their extracted text as the "
+            "primary source for document-specific questions. Each source is labelled DOCUMENT N. "
+            "For comparisons, separate facts by source and identify agreements and differences. "
+            "Do not attribute a statement to the wrong document or invent page numbers or quotations. "
+            "If information is missing, say so clearly.\n\nDOCUMENT TEXT:\n"
             + build_document_context(request.document_text, message)
         )
 
