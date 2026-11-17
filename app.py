@@ -1969,9 +1969,7 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
         <button class="prompt-card" onclick="usePrompt('Search the latest information about')"><strong>◎ Search the web</strong>Find current information</button>
         <button class="prompt-card" onclick="document.getElementById('fileInput').click()"><strong>＋ Add a file</strong>PDF, DOCX, TXT, or image</button>
       </div>
-      <div class="hero-subtitle" style="margin:18px auto 0;font-size:12px">
-        <a href="https://github.com/raihankausark-beep/RAIZEN_AI" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;text-underline-offset:4px">Visit RAIZEN AI on GitHub</a>
-      </div>
+
     </section>
     
   </main>
@@ -2972,9 +2970,7 @@ function emptyChatInterfaceMarkup() {
             <button class="prompt-card" onclick="usePrompt('Search the latest information about')"><strong>◎ Search the web</strong>Find current information</button>
             <button class="prompt-card" onclick="document.getElementById('fileInput').click()"><strong>＋ Add a file</strong>PDF, DOCX, TXT, or image</button>
           </div>
-          <div class="hero-subtitle" style="margin:18px auto 0;font-size:12px">
-            <a href="https://github.com/raihankausark-beep/RAIZEN_AI" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;text-underline-offset:4px">Visit RAIZEN AI on GitHub</a>
-          </div>
+
         </section>
     `;
 }
