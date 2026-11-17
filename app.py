@@ -625,6 +625,7 @@ PERSONALITIES = {
     "Friendly": "Be friendly, natural, helpful and easy to understand.",
     "Teacher": "Explain clearly like a good teacher using simple examples.",
     "Coding Assistant": "Focus on accurate programming help and practical debugging.",
+    "Learning Coach": "Be a patient, interactive learning coach. Adapt explanations to the learner level, check understanding, use retrieval practice, and give constructive feedback.",
     "Professional": "Use a professional, clear and structured communication style."
 }
 
@@ -1970,7 +1971,7 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
       </div>
 
       <div class="controls">
-        <select id="personality"><option>Friendly</option><option>Teacher</option><option>Coding Assistant</option><option>Professional</option></select>
+        <select id="personality"><option>Friendly</option><option>Teacher</option><option>Coding Assistant</option><option>Learning Coach</option><option>Professional</option></select>
         <select id="responseStyle"><option>Short</option><option selected>Balanced</option><option>Detailed</option></select>
       </div>
 
@@ -1991,7 +1992,7 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
   <div class="preferences-card" role="dialog" aria-modal="true" aria-labelledby="preferencesTitle">
     <div class="preferences-heading"><strong id="preferencesTitle">RAIZEN preferences</strong><button type="button" onclick="closePreferences()" aria-label="Close preferences">✕</button></div>
     <label for="savedPersonality">Assistant personality</label>
-    <select id="savedPersonality"><option>Friendly</option><option>Teacher</option><option>Coding Assistant</option><option>Professional</option></select>
+    <select id="savedPersonality"><option>Friendly</option><option>Teacher</option><option>Coding Assistant</option><option>Learning Coach</option><option>Professional</option></select>
     <label for="savedResponseStyle">Response style</label>
     <select id="savedResponseStyle"><option>Short</option><option>Balanced</option><option>Detailed</option></select>
     <div class="control-group">
@@ -2048,7 +2049,7 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
     <label for="learningTopic">What do you want to learn?</label>
     <textarea id="learningTopic" rows="3" placeholder="Enter a topic, question, or paste a syllabus point..."></textarea>
     <label for="learningApproach">Learning activity</label>
-    <select id="learningApproach"><option value="teach">Teach me step by step</option><option value="practice">Give me practice questions</option><option value="quiz">Take an interactive-style quiz one question at a time</option><option value="revision">Make concise revision notes</option><option value="exam">Prepare an exam-focused answer with examples</option></select>
+    <select id="learningApproach"><option value="teach">Teach me step by step</option><option value="practice">Give me practice questions</option><option value="quiz">Take an interactive-style quiz one question at a time</option><option value="flashcards">Practice with flashcards</option><option value="plan">Create a 7-day learning plan</option><option value="revision">Make concise revision notes</option><option value="exam">Prepare an exam-focused answer with examples</option></select>
     <label for="learningLevel">Difficulty level</label>
     <select id="learningLevel"><option>Beginner</option><option selected>First-year college</option><option>Intermediate</option><option>Advanced</option></select>
     <label for="learningCount">Number of practice questions (if applicable)</label>
@@ -2870,12 +2871,14 @@ function startLearningSession() {
     const activities={
         teach:"Teach the topic step by step. Start with prerequisites, explain each idea in simple language, use a worked example, then ask me one short check-for-understanding question before moving on.",
         practice:"Create "+count+" practice questions in increasing difficulty. Ask one at a time, wait for my answer, then explain the solution and give constructive feedback.",
-        quiz:"Run a quiz interactively, one question at a time. Ask "+count+" questions, wait for each answer, explain why it is correct or incorrect, and give a final score at the end.",
+        quiz:"Run a quiz interactively, one question at a time. Ask "+count+" questions, wait for each answer, explain why it is correct or incorrect, keep a score within this chat, and give a final score with topics to revise at the end.",
+        flashcards:"Create concise question-and-answer flashcards for active recall. Show one card at a time, wait for my attempt, then reveal the answer and a short explanation.",
+        plan:"Create a realistic 7-day learning plan for this topic. Break it into daily goals, short study sessions, practice tasks, and a recap day.",
         revision:"Create clear, concise revision notes with key definitions, formulas or rules where relevant, examples, and a short recap.",
         exam:"Prepare an exam-focused explanation with a clear structure, important points, examples, and a concise conclusion. Include common mistakes to avoid."
     };
     const prompt="Act as a patient learning tutor. Topic: "+topic+". Learner level: "+level+". Learning activity: "+activities[approach]+" Use accurate explanations, define unfamiliar terms, and do not assume prior knowledge. Keep the session interactive and let me ask questions at any time.";
-    closeLearningMode();document.getElementById("personality").value="Teacher";document.getElementById("responseStyle").value="Detailed";usePrompt(prompt);window.sendMessage();
+    closeLearningMode();document.getElementById("personality").value="Learning Coach";document.getElementById("responseStyle").value="Detailed";usePrompt(prompt);window.sendMessage();
 }
 
 function openIntelligenceDashboard() {
@@ -4756,6 +4759,18 @@ async def chat(request: ChatRequest):
             + build_document_context(request.document_text, message)
         )
 
+    learning_coach_guidelines = ""
+    if request.personality == "Learning Coach":
+        learning_coach_guidelines = """
+Learning Coach operating guidelines:
+- Teach for understanding, not just answer completion. Adapt to the learner level.
+- Break difficult concepts into small steps, define key terms, and use relatable examples.
+- Use active recall: ask one focused question at a time, wait for the learner response, then give feedback.
+- For quizzes, track score only within the current conversation; never claim persistent progress tracking.
+- For exam preparation, distinguish key concepts, common mistakes, and useful practice. Never promise grades or outcomes.
+- If the learner is confused, try a different explanation rather than repeating the same wording.
+"""
+
     coding_assistant_guidelines = ""
     if request.personality == "Coding Assistant":
         coding_assistant_guidelines = """
@@ -4795,6 +4810,8 @@ Personality:
 {personality}
 
 {coding_assistant_guidelines}
+
+{learning_coach_guidelines}
 
 Response style:
 {style}
