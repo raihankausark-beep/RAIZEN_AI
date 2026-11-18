@@ -165,7 +165,7 @@ async def sitemap():
     )
 
 
-@app.get("/robots.txt")
+@app.api_route("/robots.txt", methods=["GET", "HEAD"])
 async def robots():
     return Response(
         content=f"""User-agent: *
