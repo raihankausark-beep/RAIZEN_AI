@@ -169,11 +169,16 @@ async def sitemap():
 async def robots():
     return Response(
         content=f"""User-agent: *
-Allow: /
+Disallow:
 
 Sitemap: {APP_BASE_URL}/sitemap.xml
 """,
-        media_type="text/plain"
+        media_type="text/plain",
+        headers={
+            "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
     )
 
 
