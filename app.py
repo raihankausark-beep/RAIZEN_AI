@@ -150,28 +150,11 @@ async def auth_callback(request: Request):
     return RedirectResponse(url="/")
 
 
-@app.get("/sitemap.xml")
-async def sitemap():
-    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-    <url>
-        <loc>{APP_BASE_URL}/</loc>
-    </url>
-</urlset>"""
-
-    return Response(
-        content=xml,
-        media_type="application/xml"
-    )
-
-
 @app.api_route("/robots.txt", methods=["GET", "HEAD"])
 async def robots():
     return Response(
-        content=f"""User-agent: *
+        content="""User-agent: *
 Disallow:
-
-Sitemap: {APP_BASE_URL}/sitemap.xml
 """,
         media_type="text/plain",
         headers={
@@ -1329,12 +1312,10 @@ HTML = r"""
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="google-site-verification" content="WhBGh8iVPX33XrivJcISQXytsMDUOWUY1nk5eU52NHI" />
 <meta name="theme-color" content="#000000">
 <meta name="description" content="RAIZEN AI is an AI chatbot for asking questions, learning, coding, writing, web research, and working with documents. Explore the RAIZEN AI assistant.">
-<meta name="robots" content="index,follow,max-image-preview:large">
-<meta name="googlebot" content="index,follow">
-<link rel="canonical" href="https://raizen-ai.onrender.com/">
+<meta name="robots" content="noindex,follow">
+<meta name="googlebot" content="noindex,follow">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="RAIZEN AI">
 <meta property="og:title" content="RAIZEN AI – Your AI Chatbot">
