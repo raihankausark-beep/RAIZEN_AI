@@ -5439,6 +5439,12 @@ async def edit_image(
     if content_type not in {"image/png", "image/jpeg", "image/webp"}:
         return {"error": "Please upload a PNG, JPG/JPEG, or WEBP image."}
 
+    image_allowed, image_remaining, image_reservation = await asyncio.to_thread(
+        reserve_daily_usage, username, "image_generation", 3
+    )
+    if not image_allowed:
+        return {"error": "You've reached your daily image limit (3 creations or edits per 24 hours). Please try again later."}
+
     try:
         raw_bytes = await file.read(MAX_IMAGE_BYTES + 1)
         if len(raw_bytes) > MAX_IMAGE_BYTES:
@@ -5453,13 +5459,12 @@ async def edit_image(
         buffer = BytesIO()
         edited.save(buffer, format="PNG")
         encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
-        await asyncio.to_thread(record_usage_event, username, "image_edit")
-
         return {
             "image": "data:image/png;base64," + encoded,
             "model": IMAGE_EDIT_MODEL
         }
     except Exception as error:
+        await asyncio.to_thread(release_daily_usage_reservation, image_reservation)
         print("IMAGE EDIT ERROR:", error)
         return {
             "error": "Image editing is temporarily unavailable. Please try again."
