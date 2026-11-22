@@ -3830,33 +3830,51 @@ window.sendMessage = async function sendMessage() {
             }
             const synth = window.speechSynthesis;
             synth.cancel();
-            const utterance = new SpeechSynthesisUtterance(String(reply || "").trim());
             const voiceKey = (loggedInUsername || "guest").toLowerCase();
             const lang = localStorage.getItem("raizen_voice_language_" + voiceKey);
-            utterance.lang = (lang && lang !== "auto") ? lang : "en-IN";
-            utterance.rate = Math.min(1.25, Math.max(0.75, Number(localStorage.getItem("raizen_voice_rate_" + voiceKey) || "1")));
-            utterance.pitch = 1;
+            const speechLang = (lang && lang !== "auto") ? lang : "en-IN";
+            const rate = Math.min(1.25, Math.max(0.75, Number(localStorage.getItem("raizen_voice_rate_" + voiceKey) || "1")));
+            const cleanText = String(reply || "").replace(/\\s+/g, " ").trim();
+            const chunks = [];
+            let remaining = cleanText;
+            while (remaining.length > 220) {
+                let cut = remaining.lastIndexOf(" ", 220);
+                if (cut < 80) cut = 220;
+                chunks.push(remaining.slice(0, cut).trim());
+                remaining = remaining.slice(cut).trim();
+            }
+            if (remaining) chunks.push(remaining);
+            let chunkIndex = 0;
+            let failed = false;
             const resetButton = function() {
                 readAloud.dataset.speaking = "0";
                 readAloud.textContent = "🔊 Read aloud";
             };
-            utterance.onend = resetButton;
-            utterance.onerror = function(event) {
-                resetButton();
-                readAloud.textContent = "Voice unavailable — try again";
-                console.warn("RAIZEN read-aloud error:", event && event.error);
-            };
-            const availableVoices = synth.getVoices();
-            if (availableVoices.length) {
-                const preferred = availableVoices.find(v => v.lang && v.lang.toLowerCase() === utterance.lang.toLowerCase())
+            const speakNext = function() {
+                if (failed || readAloud.dataset.speaking !== "1") return;
+                if (chunkIndex >= chunks.length) { resetButton(); return; }
+                const utterance = new SpeechSynthesisUtterance(chunks[chunkIndex++]);
+                utterance.lang = speechLang;
+                utterance.rate = rate;
+                utterance.pitch = 1;
+                const availableVoices = synth.getVoices();
+                const preferred = availableVoices.find(v => v.lang && v.lang.toLowerCase() === speechLang.toLowerCase())
                     || availableVoices.find(v => v.lang && v.lang.toLowerCase().startsWith("en-in"))
                     || availableVoices.find(v => v.lang && v.lang.toLowerCase().startsWith("en"));
                 if (preferred) utterance.voice = preferred;
-            }
+                utterance.onend = speakNext;
+                utterance.onerror = function(event) {
+                    failed = true;
+                    resetButton();
+                    readAloud.textContent = "Voice unavailable — try again";
+                    console.warn("RAIZEN read-aloud error:", event && event.error);
+                };
+                synth.speak(utterance);
+            };
             readAloud.dataset.speaking = "1";
             readAloud.textContent = "⏹ Stop reading";
             synth.resume();
-            synth.speak(utterance);
+            speakNext();
         };
         actions.appendChild(readAloud);
 
