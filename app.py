@@ -124,7 +124,7 @@ async def raizen_safety_middleware(request: Request, call_next):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(self), geolocation=()")
     if request.url.scheme == "https":
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
@@ -296,7 +296,9 @@ MAX_DOCUMENT_CONTEXT_CHARS = 120000
 
 client = InferenceClient(api_key=HF_TOKEN)
 
-VISION_MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
+VISION_MODEL = (os.getenv("GEMINI_VISION_MODEL") or GEMINI_MODEL or "gemini-3.8-flash").strip()
+HF_VISION_MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
+VISION_FALLBACK_MODELS = list(dict.fromkeys([VISION_MODEL, GEMINI_MODEL, GEMINI_FAST_MODEL, "gemini-3.8-flash", "gemini-3.5-flash-lite"]))
 
 vision_client = InferenceClient(api_key=HF_TOKEN)
 
@@ -1493,7 +1495,7 @@ button{color:inherit}
 /* Hidden/secondary controls */
 .controls{display:none}
 .file-panel,.vision-panel{display:none;align-items:center;gap:8px;max-width:900px;margin:0 auto 8px;padding:8px 11px;background:#151515;border:1px solid #292929;border-radius:14px;font-size:12px}
-.live-sight-panel{display:none;grid-template-columns:minmax(0,1fr);gap:10px;max-width:900px;margin:0 auto 10px;padding:12px;background:linear-gradient(145deg,#101b2b,#151427);border:1px solid rgba(86,202,234,.3);border-radius:16px;color:#d9e9f7}.live-sight-panel.open{display:grid}.live-sight-heading{display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:space-between}.live-sight-heading strong{font-size:12px;letter-spacing:1.2px;color:#8be9ff}.live-sight-heading span,.live-sight-status{font-size:12px;color:#9fb3c8}.live-sight-panel video{width:100%;max-height:420px;aspect-ratio:16/9;object-fit:contain;background:#05070b;border:1px solid #26384c;border-radius:12px}.live-sight-actions{display:flex;flex-wrap:wrap;gap:8px}.live-sight-capture{border-color:#2c7b99;background:#15374b;color:#e8fbff}.live-sight-panel button:disabled{opacity:.45;cursor:not-allowed}@media(max-width:650px){.live-sight-actions button{flex:1;min-width:100px}}
+
 
 .file-input,.vision-input{max-width:100%;color:#bbb;font-size:12px}.file-name,.vision-name{color:#aaa;font-size:12px}.control{border:1px solid #333;background:#202020;border-radius:10px;padding:7px 10px;cursor:pointer}
 .small{display:none}
@@ -1969,7 +1971,6 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
     <div class="composer">
       <div class="tool-strip unified-tools">
         <button class="tool-chip" onclick="document.getElementById('fileInput').click()">＋ Attach file or image</button>
-        <button class="tool-chip" type="button" onclick="openLiveSight()">👁 Live Sight Camera</button>
         <span class="tool-hint">Ask naturally. Attach up to 3 documents to summarize or compare.</span>
       </div>
 
@@ -1984,16 +1985,7 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
         <button class="control" onclick="clearVision()">Remove</button>
       </div>
 
-      <div id="liveSightPanel" class="live-sight-panel" aria-live="polite">
-        <div class="live-sight-heading"><strong>RAIZEN LIVE SIGHT</strong><span>Camera is only active while you start it</span></div>
-        <video id="liveSightVideo" autoplay playsinline muted></video>
-        <div id="liveSightStatus" class="live-sight-status">Camera is off.</div>
-        <div class="live-sight-actions">
-          <button type="button" class="control" id="liveSightStart" onclick="startLiveSightCamera()">Start camera</button>
-          <button type="button" class="control live-sight-capture" id="liveSightCapture" onclick="captureLiveSightFrame()" disabled>Capture frame</button>
-          <button type="button" class="control" onclick="closeLiveSight()">Close</button>
-        </div>
-      </div>
+
 
       <div class="controls">
         <select id="personality"><option>Friendly</option><option>Auto (Smart Router)</option><option>Teacher</option><option>Coding Assistant</option><option>Learning Coach</option><option>Researcher</option><option>Creative Writer</option><option>Interview Coach</option><option>Professional</option></select>
@@ -2420,83 +2412,6 @@ function clearVision() {
         document.getElementById("fileName").textContent = "No attachment selected";
     }
 }
-
-function openLiveSight(){
-    const panel=document.getElementById("liveSightPanel");
-    if(!panel)return;
-    panel.classList.add("open");
-    const status=document.getElementById("liveSightStatus");
-    if(status)status.textContent="Camera is off. Start it when you're ready.";
-}
-let liveSightStream=null;
-async function startLiveSightCamera(){
-    const status=document.getElementById("liveSightStatus");
-    const video=document.getElementById("liveSightVideo");
-    const start=document.getElementById("liveSightStart");
-    const capture=document.getElementById("liveSightCapture");
-    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
-        if(status)status.textContent="Camera access is not supported in this browser.";
-        return;
-    }
-    if(liveSightStream){stopLiveSightCamera();return;}
-    if(start)start.disabled=true;
-    if(status)status.textContent="Requesting camera permission…";
-    try{
-        liveSightStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});
-        if(video){video.srcObject=liveSightStream;await video.play();}
-        if(capture)capture.disabled=false;
-        if(start){start.disabled=false;start.textContent="Stop camera";}
-        if(status)status.textContent="Camera is on. Capture a frame when ready.";
-    }catch(error){
-        if(start)start.disabled=false;
-        if(status)status.textContent=error&&error.name==="NotAllowedError"?"Camera permission was denied. Allow camera access in your browser settings and try again.":"Could not start the camera. Check that a camera is connected and not in use.";
-    }
-}
-function stopLiveSightCamera(){
-    if(liveSightStream){liveSightStream.getTracks().forEach(track=>track.stop());liveSightStream=null;}
-    const video=document.getElementById("liveSightVideo");
-    const start=document.getElementById("liveSightStart");
-    const capture=document.getElementById("liveSightCapture");
-    if(video)video.srcObject=null;
-    if(start){start.disabled=false;start.textContent="Start camera";}
-    if(capture)capture.disabled=true;
-    const status=document.getElementById("liveSightStatus");
-    if(status)status.textContent="Camera is off.";
-}
-async function captureLiveSightFrame(){
-    const video=document.getElementById("liveSightVideo");
-    const status=document.getElementById("liveSightStatus");
-    if(!video||!liveSightStream||!video.videoWidth||!video.videoHeight){
-        if(status)status.textContent="Start the camera first.";
-        return;
-    }
-    try{
-        const scale=Math.min(1,1280/video.videoWidth);
-        const canvas=document.createElement("canvas");
-        canvas.width=Math.max(1,Math.round(video.videoWidth*scale));
-        canvas.height=Math.max(1,Math.round(video.videoHeight*scale));
-        const context=canvas.getContext("2d");
-        context.drawImage(video,0,0,canvas.width,canvas.height);
-        const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/jpeg",0.88));
-        if(!blob)throw new Error("Capture failed");
-        const filename="raizen-camera-"+new Date().toISOString().replace(/[:.]/g,"-")+".jpg";
-        visionFile=new File([blob],filename,{type:"image/jpeg"});
-        document.getElementById("fileName").textContent="No document selected";
-        document.getElementById("visionName").textContent="📷 Camera snapshot ready";
-        displayMessage("assistant","📷 Camera snapshot captured and attached. Ask RAIZEN what it sees.");
-        stopLiveSightCamera();
-        closeLiveSight();
-        document.getElementById("messageInput").focus();
-    }catch(error){
-        if(status)status.textContent="Could not capture the frame. Try again.";
-    }
-}
-function closeLiveSight(){
-    stopLiveSightCamera();
-    const panel=document.getElementById("liveSightPanel");
-    if(panel)panel.classList.remove("open");
-}
-window.addEventListener("pagehide",stopLiveSightCamera);
 
 async function sendVisionMessage(question, signal) {
     const formData = new FormData();
@@ -4731,7 +4646,7 @@ async def workspace_overview(request: Request, token: str = ""):
             "database": "connected",
             "models": {
                 "chat": {"name": GEMINI_FAST_MODEL, "configured": bool(GEMINI_API_KEY)},
-                "vision": {"name": VISION_MODEL, "configured": bool(HF_TOKEN)},
+                "vision": {"name": VISION_MODEL + (" + HF fallback" if HF_TOKEN else ""), "configured": bool(GEMINI_API_KEY or HF_TOKEN)},
                 "image_generation": {"name": IMAGE_MODEL, "configured": bool(HF_TOKEN)},
                 "image_editing": {"name": IMAGE_EDIT_MODEL, "configured": bool(HF_TOKEN)}
             },
@@ -4884,85 +4799,110 @@ async def vision(file: UploadFile = File(...), question: str = Form(""), token: 
     username = await asyncio.to_thread(get_authenticated_username, token)
     if not username:
         return {"error": "Please log in to use Vision."}
-    filename = file.filename or "image"
-    content_type = file.content_type or ""
 
-    allowed_types = {
-        "image/png": "png",
-        "image/jpeg": "jpeg",
-        "image/webp": "webp"
-    }
-
+    content_type = (file.content_type or "").lower().strip()
+    allowed_types = {"image/png", "image/jpeg", "image/webp"}
     if content_type not in allowed_types:
-        return {
-            "error": "Unsupported image type. Please use PNG, JPG/JPEG, or WEBP."
-        }
+        return {"error": "Unsupported image type. Please use PNG, JPG/JPEG, or WEBP."}
 
     try:
         raw_bytes = await file.read(MAX_IMAGE_BYTES + 1)
-
         if len(raw_bytes) > MAX_IMAGE_BYTES:
             return {"error": "Image is too large. Maximum size is 12 MB."}
+        if not raw_bytes:
+            return {"error": "The image file is empty. Please choose another image."}
 
-        encoded = base64.b64encode(raw_bytes).decode("utf-8")
-        data_url = f"data:{content_type};base64,{encoded}"
+        user_question = question.strip() or (
+            "Describe this image clearly. Mention important visible details and "
+            "read any clearly visible text when possible."
+        )
+        encoded = base64.b64encode(raw_bytes).decode("ascii")
 
-        user_question = question.strip()
-        if not user_question:
-            user_question = (
-                "Describe this image clearly. Mention important visible details "
-                "and read any clearly visible text when possible."
-            )
+        # Prefer Gemini's native multimodal REST API, rather than the older
+        # Hugging Face inference route which may not serve the selected model.
+        gemini_errors = []
+        if GEMINI_API_KEY:
+            for model_name in VISION_FALLBACK_MODELS:
+                try:
+                    payload = json.dumps({
+                        "contents": [{
+                            "parts": [
+                                {"inline_data": {"mime_type": content_type, "data": encoded}},
+                                {"text": user_question}
+                            ]
+                        }],
+                        "generationConfig": {
+                            "maxOutputTokens": 1000,
+                            "temperature": 0.3
+                        }
+                    }).encode("utf-8")
+                    req = URLRequest(
+                        f"https://generativelanguage.googleapis.com/v1beta/models/{quote(model_name, safe='')}:generateContent",
+                        data=payload,
+                        headers={
+                            "Content-Type": "application/json",
+                            "x-goog-api-key": GEMINI_API_KEY,
+                            "User-Agent": "RAIZEN-AI/3.0"
+                        },
+                        method="POST"
+                    )
+                    with urlopen(req, timeout=60) as response:
+                        result = json.loads(response.read().decode("utf-8"))
+                    candidates = result.get("candidates") or []
+                    parts = (candidates[0].get("content", {}).get("parts", []) if candidates else [])
+                    reply = "\n".join(
+                        str(part.get("text", "")).strip()
+                        for part in parts
+                        if isinstance(part, dict) and part.get("text")
+                    ).strip()
+                    if reply:
+                        await asyncio.to_thread(record_usage_event, username, "vision")
+                        return {"reply": reply, "model": model_name}
+                    gemini_errors.append(f"{model_name}: empty model response")
+                except Exception as error:
+                    gemini_errors.append(f"{model_name}: {type(error).__name__}: {error}")
+                    print(f"RAIZEN GEMINI VISION ERROR ({model_name}): {type(error).__name__}: {error}", flush=True)
 
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are RAIZEN's vision assistant. Analyze the supplied image "
-                    "carefully. Be accurate, concise, and do not invent details. "
-                    "If text is blurry or unreadable, say so."
-                )
-            },
-            {
-                "role": "user",
-                "content": [
+        # Optional fallback to the existing Hugging Face provider if configured.
+        if HF_TOKEN:
+            try:
+                data_url = f"data:{content_type};base64,{encoded}"
+                messages = [
                     {
-                        "type": "image_url",
-                        "image_url": {"url": data_url}
+                        "role": "system",
+                        "content": (
+                            "You are RAIZEN's vision assistant. Analyze the supplied image "
+                            "carefully. Be accurate, concise, and do not invent details. "
+                            "If text is blurry or unreadable, say so."
+                        )
                     },
                     {
-                        "type": "text",
-                        "text": user_question
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url", "image_url": {"url": data_url}},
+                            {"type": "text", "text": user_question}
+                        ]
                     }
                 ]
-            }
-        ]
+                response = vision_client.chat.completions.create(
+                    model=HF_VISION_MODEL,
+                    messages=messages,
+                    max_tokens=1000
+                )
+                reply = response.choices[0].message.content
+                if reply:
+                    await asyncio.to_thread(record_usage_event, username, "vision")
+                    return {"reply": reply, "model": HF_VISION_MODEL}
+            except Exception as error:
+                print(f"RAIZEN HUGGINGFACE VISION FALLBACK ERROR: {type(error).__name__}: {error}", flush=True)
 
-        response = vision_client.chat.completions.create(
-            model=VISION_MODEL,
-            messages=messages,
-            max_tokens=1000
-        )
-
-        reply = response.choices[0].message.content
-
-        if not reply:
-            return {"error": "The vision model returned an empty response."}
-        await asyncio.to_thread(record_usage_event, username, "vision")
-
-        return {
-            "reply": reply,
-            "model": VISION_MODEL
-        }
-
+        print("RAIZEN VISION FAILED: no configured provider returned a usable response.", flush=True)
+        if not GEMINI_API_KEY and not HF_TOKEN:
+            return {"error": "Vision is not configured on the server. Please contact the administrator."}
+        return {"error": "Vision is temporarily unavailable after trying the configured providers. Please try again later."}
     except Exception as error:
-        print("VISION ERROR:", error)
-        return {
-            "error": (
-                "Vision is temporarily unavailable. "
-                "Please try the image again."
-            )
-        }
+        print("VISION ERROR:", type(error).__name__, error, flush=True)
+        return {"error": "Image analysis failed. Please try a smaller or different image."}
 
 
 @app.post("/chat")
