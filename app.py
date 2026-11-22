@@ -3828,15 +3828,35 @@ window.sendMessage = async function sendMessage() {
                 readAloud.textContent = "🔊 Read aloud";
                 return;
             }
-            window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(reply);
-            utterance.onend = utterance.onerror = function() {
+            const synth = window.speechSynthesis;
+            synth.cancel();
+            const utterance = new SpeechSynthesisUtterance(String(reply || "").trim());
+            const voiceKey = (loggedInUsername || "guest").toLowerCase();
+            const lang = localStorage.getItem("raizen_voice_language_" + voiceKey);
+            utterance.lang = (lang && lang !== "auto") ? lang : "en-IN";
+            utterance.rate = Math.min(1.25, Math.max(0.75, Number(localStorage.getItem("raizen_voice_rate_" + voiceKey) || "1")));
+            utterance.pitch = 1;
+            const resetButton = function() {
                 readAloud.dataset.speaking = "0";
                 readAloud.textContent = "🔊 Read aloud";
             };
+            utterance.onend = resetButton;
+            utterance.onerror = function(event) {
+                resetButton();
+                readAloud.textContent = "Voice unavailable — try again";
+                console.warn("RAIZEN read-aloud error:", event && event.error);
+            };
+            const availableVoices = synth.getVoices();
+            if (availableVoices.length) {
+                const preferred = availableVoices.find(v => v.lang && v.lang.toLowerCase() === utterance.lang.toLowerCase())
+                    || availableVoices.find(v => v.lang && v.lang.toLowerCase().startsWith("en-in"))
+                    || availableVoices.find(v => v.lang && v.lang.toLowerCase().startsWith("en"));
+                if (preferred) utterance.voice = preferred;
+            }
             readAloud.dataset.speaking = "1";
             readAloud.textContent = "⏹ Stop reading";
-            window.speechSynthesis.speak(utterance);
+            synth.resume();
+            synth.speak(utterance);
         };
         actions.appendChild(readAloud);
 
