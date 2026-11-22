@@ -124,7 +124,7 @@ async def raizen_safety_middleware(request: Request, call_next):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(self), geolocation=()")
     if request.url.scheme == "https":
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
@@ -1971,7 +1971,6 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
     <div class="composer">
       <div class="tool-strip unified-tools">
         <button class="tool-chip" onclick="document.getElementById('fileInput').click()">＋ Attach file or image</button>
-        
         <span class="tool-hint">Ask naturally. Attach up to 3 documents to summarize or compare.</span>
       </div>
 
