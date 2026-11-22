@@ -5145,6 +5145,12 @@ Creator recognition and conversational personalization:
 - When the message is a greeting or casual check-in, respond warmly and naturally with a short relevant greeting. Avoid generic boilerplate and forced follow-up questions.
 - Personalization must be grounded in verified account/session data or conversation history. Do not pretend to remember details that are not available.
 
+Language adaptation:
+- Understand English, Hindi, and Hinglish (Hindi written in Roman script) naturally, including informal spelling, slang, and mixed-language messages.
+- If a user writes in Hinglish, reply in natural Hinglish by default; if they write in Hindi, reply in Hindi; if they write in English, reply in English.
+- Do not translate the user's message unless they ask. Keep technical terms in English where that is clearer, and explain them simply.
+- Avoid stiff or literal translations; sound like a fluent, helpful conversational assistant.
+
 Response behavior — natural ChatGPT-like conversation:
 - Sound natural, clear, and conversational; avoid robotic phrasing, canned openings, repetitive acknowledgements, or unnecessary closing offers.
 - Understand the user's intent even when messages contain typos, slang, incomplete sentences, or casual language. If meaning is clear, answer directly instead of correcting spelling.
@@ -5390,13 +5396,25 @@ async def generate_image(request: ImageRequest):
     if not image_allowed:
         return {"error": "You've reached your daily image creation limit (3 images per 24 hours). Please try again later."}
 
+    # Upgrade simple prompts into a richer visual brief without changing the user's subject.
+    enhanced_prompt = (
+        prompt
+        + "\\n\\nVisual quality direction: create a polished, high-quality image with clear subject focus, "
+        + "intentional composition, realistic lighting and shadows, refined color harmony, rich but natural detail, "
+        + "clean edges, coherent perspective, and professional art direction. Avoid clutter and visual artifacts. "
+        + "Follow the requested style exactly; do not add text, logos, or watermarks unless requested."
+    )
+    default_negative = (
+        "low resolution, blurry, noisy, poorly composed, distorted perspective, malformed details, "
+        "artifacts, clutter, watermark, unwanted text"
+    )
     try:
         image = image_client.text_to_image(
-            prompt,
+            enhanced_prompt,
             model=IMAGE_MODEL,
-            negative_prompt=request.negative_prompt.strip() or None,
-            width=768,
-            height=768,
+            negative_prompt=request.negative_prompt.strip() or default_negative,
+            width=1024,
+            height=1024,
             num_inference_steps=4
         )
 
@@ -5452,9 +5470,15 @@ async def edit_image(
         if len(raw_bytes) > MAX_IMAGE_BYTES:
             return {"error": "Image is too large. Maximum size is 12 MB."}
 
+        edit_prompt = (
+            prompt
+            + "\\n\\nEditing quality direction: preserve the original subject identity and important details, "
+            + "apply the requested change cleanly, maintain natural lighting, coherent edges, and professional "
+            + "composition. Do not introduce extra text, logos, or watermarks unless requested."
+        )
         edited = image_edit_client.image_to_image(
             raw_bytes,
-            prompt=prompt,
+            prompt=edit_prompt,
             model=IMAGE_EDIT_MODEL
         )
 
