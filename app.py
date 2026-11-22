@@ -4572,6 +4572,60 @@ async def auth_check(token: str = ""):
     return {"ok": bool(username), "username": username or ""}
 
 
+def reserve_daily_usage(username: str, event_type: str, daily_limit: int):
+    """
+    Atomically enforce a rolling 24-hour per-account quota and record the attempt.
+    Returns (allowed, remaining, reservation_id). Admin account is exempt.
+    Fail closed if the usage database cannot be reached.
+    """
+    normalized = (username or "").strip().lower()
+    if not normalized:
+        return False, 0, None
+    if ADMIN_EMAIL and normalized == ADMIN_EMAIL:
+        return True, daily_limit, None
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # Serialize quota checks per user/type to avoid concurrent requests
+                # both passing the same final slot.
+                cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (normalized + ":" + event_type,))
+                cur.execute(
+                    """SELECT COUNT(*) AS count
+                       FROM raizen_usage_events
+                       WHERE username_key = %s
+                         AND event_type = %s
+                         AND created_at >= NOW() - INTERVAL '24 hours'""",
+                    (normalized, event_type)
+                )
+                used = int((cur.fetchone() or {}).get("count", 0))
+                if used >= daily_limit:
+                    return False, 0, None
+                cur.execute(
+                    """INSERT INTO raizen_usage_events (username_key, event_type)
+                       VALUES (%s, %s) RETURNING id""",
+                    (normalized, event_type)
+                )
+                reservation_id = cur.fetchone()["id"]
+            conn.commit()
+            return True, max(0, daily_limit - used - 1), reservation_id
+    except Exception as error:
+        print("DAILY QUOTA NOTICE:", type(error).__name__)
+        return False, 0, None
+
+
+def release_daily_usage_reservation(reservation_id):
+    if reservation_id is None:
+        return
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM raizen_usage_events WHERE id = %s", (reservation_id,))
+            conn.commit()
+    except Exception as error:
+        print("DAILY QUOTA REFUND NOTICE:", type(error).__name__)
+
+
 def record_usage_event(username: str, event_type: str):
     """Record minimal per-account product usage; never store prompt text."""
     try:
@@ -4921,7 +4975,11 @@ async def chat(request: ChatRequest):
     if len(request.custom_instructions or "") > 6000:
         return {"reply": "Custom instructions are too long. Please keep them under 6,000 characters."}
 
-    await asyncio.to_thread(record_usage_event, username, "chat")
+    chat_allowed, chat_remaining, chat_reservation = await asyncio.to_thread(
+        reserve_daily_usage, username, "chat", 30
+    )
+    if not chat_allowed:
+        return {"reply": "You've reached your daily chat limit (30 messages per 24 hours). Please try again later."}
     lower = message.lower()
 
     # Creator recognition is conversational only. Admin privileges continue to
@@ -5324,6 +5382,12 @@ async def generate_image(request: ImageRequest):
     if len(prompt) > 1000:
         return {"error": "Image prompt is too long. Keep it under 1000 characters."}
 
+    image_allowed, image_remaining, image_reservation = await asyncio.to_thread(
+        reserve_daily_usage, username, "image_generation", 3
+    )
+    if not image_allowed:
+        return {"error": "You've reached your daily image creation limit (3 images per 24 hours). Please try again later."}
+
     try:
         image = image_client.text_to_image(
             prompt,
@@ -5337,14 +5401,13 @@ async def generate_image(request: ImageRequest):
         buffer = BytesIO()
         image.save(buffer, format="PNG")
         encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
-        await asyncio.to_thread(record_usage_event, username, "image_generation")
-
         return {
             "image": "data:image/png;base64," + encoded,
             "model": IMAGE_MODEL
         }
 
     except Exception as error:
+        await asyncio.to_thread(release_daily_usage_reservation, image_reservation)
         print("IMAGE GENERATION ERROR:", error)
         return {
             "error": "Image generation is temporarily unavailable. Please try again."
