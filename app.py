@@ -124,7 +124,7 @@ async def raizen_safety_middleware(request: Request, call_next):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(self), geolocation=()")
+    response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()")
     if request.url.scheme == "https":
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
@@ -1493,6 +1493,8 @@ button{color:inherit}
 /* Hidden/secondary controls */
 .controls{display:none}
 .file-panel,.vision-panel{display:none;align-items:center;gap:8px;max-width:900px;margin:0 auto 8px;padding:8px 11px;background:#151515;border:1px solid #292929;border-radius:14px;font-size:12px}
+.live-sight-panel{display:none;grid-template-columns:minmax(0,1fr);gap:10px;max-width:900px;margin:0 auto 10px;padding:12px;background:linear-gradient(145deg,#101b2b,#151427);border:1px solid rgba(86,202,234,.3);border-radius:16px;color:#d9e9f7}.live-sight-panel.open{display:grid}.live-sight-heading{display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:space-between}.live-sight-heading strong{font-size:12px;letter-spacing:1.2px;color:#8be9ff}.live-sight-heading span,.live-sight-status{font-size:12px;color:#9fb3c8}.live-sight-panel video{width:100%;max-height:420px;aspect-ratio:16/9;object-fit:contain;background:#05070b;border:1px solid #26384c;border-radius:12px}.live-sight-actions{display:flex;flex-wrap:wrap;gap:8px}.live-sight-capture{border-color:#2c7b99;background:#15374b;color:#e8fbff}.live-sight-panel button:disabled{opacity:.45;cursor:not-allowed}@media(max-width:650px){.live-sight-actions button{flex:1;min-width:100px}}
+
 .file-input,.vision-input{max-width:100%;color:#bbb;font-size:12px}.file-name,.vision-name{color:#aaa;font-size:12px}.control{border:1px solid #333;background:#202020;border-radius:10px;padding:7px 10px;cursor:pointer}
 .small{display:none}
 
@@ -1967,6 +1969,7 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
     <div class="composer">
       <div class="tool-strip unified-tools">
         <button class="tool-chip" onclick="document.getElementById('fileInput').click()">＋ Attach file or image</button>
+        <button class="tool-chip" type="button" onclick="openLiveSight()">👁 Live Sight Camera</button>
         <span class="tool-hint">Ask naturally. Attach up to 3 documents to summarize or compare.</span>
       </div>
 
@@ -1979,6 +1982,17 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
       <div class="vision-panel">
         <span id="visionName" class="vision-name">No image selected</span>
         <button class="control" onclick="clearVision()">Remove</button>
+      </div>
+
+      <div id="liveSightPanel" class="live-sight-panel" aria-live="polite">
+        <div class="live-sight-heading"><strong>RAIZEN LIVE SIGHT</strong><span>Camera is only active while you start it</span></div>
+        <video id="liveSightVideo" autoplay playsinline muted></video>
+        <div id="liveSightStatus" class="live-sight-status">Camera is off.</div>
+        <div class="live-sight-actions">
+          <button type="button" class="control" id="liveSightStart" onclick="startLiveSightCamera()">Start camera</button>
+          <button type="button" class="control live-sight-capture" id="liveSightCapture" onclick="captureLiveSightFrame()" disabled>Capture frame</button>
+          <button type="button" class="control" onclick="closeLiveSight()">Close</button>
+        </div>
       </div>
 
       <div class="controls">
@@ -2406,6 +2420,83 @@ function clearVision() {
         document.getElementById("fileName").textContent = "No attachment selected";
     }
 }
+
+function openLiveSight(){
+    const panel=document.getElementById("liveSightPanel");
+    if(!panel)return;
+    panel.classList.add("open");
+    const status=document.getElementById("liveSightStatus");
+    if(status)status.textContent="Camera is off. Start it when you're ready.";
+}
+let liveSightStream=null;
+async function startLiveSightCamera(){
+    const status=document.getElementById("liveSightStatus");
+    const video=document.getElementById("liveSightVideo");
+    const start=document.getElementById("liveSightStart");
+    const capture=document.getElementById("liveSightCapture");
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+        if(status)status.textContent="Camera access is not supported in this browser.";
+        return;
+    }
+    if(liveSightStream){stopLiveSightCamera();return;}
+    if(start)start.disabled=true;
+    if(status)status.textContent="Requesting camera permission…";
+    try{
+        liveSightStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});
+        if(video){video.srcObject=liveSightStream;await video.play();}
+        if(capture)capture.disabled=false;
+        if(start){start.disabled=false;start.textContent="Stop camera";}
+        if(status)status.textContent="Camera is on. Capture a frame when ready.";
+    }catch(error){
+        if(start)start.disabled=false;
+        if(status)status.textContent=error&&error.name==="NotAllowedError"?"Camera permission was denied. Allow camera access in your browser settings and try again.":"Could not start the camera. Check that a camera is connected and not in use.";
+    }
+}
+function stopLiveSightCamera(){
+    if(liveSightStream){liveSightStream.getTracks().forEach(track=>track.stop());liveSightStream=null;}
+    const video=document.getElementById("liveSightVideo");
+    const start=document.getElementById("liveSightStart");
+    const capture=document.getElementById("liveSightCapture");
+    if(video)video.srcObject=null;
+    if(start){start.disabled=false;start.textContent="Start camera";}
+    if(capture)capture.disabled=true;
+    const status=document.getElementById("liveSightStatus");
+    if(status)status.textContent="Camera is off.";
+}
+async function captureLiveSightFrame(){
+    const video=document.getElementById("liveSightVideo");
+    const status=document.getElementById("liveSightStatus");
+    if(!video||!liveSightStream||!video.videoWidth||!video.videoHeight){
+        if(status)status.textContent="Start the camera first.";
+        return;
+    }
+    try{
+        const scale=Math.min(1,1280/video.videoWidth);
+        const canvas=document.createElement("canvas");
+        canvas.width=Math.max(1,Math.round(video.videoWidth*scale));
+        canvas.height=Math.max(1,Math.round(video.videoHeight*scale));
+        const context=canvas.getContext("2d");
+        context.drawImage(video,0,0,canvas.width,canvas.height);
+        const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/jpeg",0.88));
+        if(!blob)throw new Error("Capture failed");
+        const filename="raizen-camera-"+new Date().toISOString().replace(/[:.]/g,"-")+".jpg";
+        visionFile=new File([blob],filename,{type:"image/jpeg"});
+        document.getElementById("fileName").textContent="No document selected";
+        document.getElementById("visionName").textContent="📷 Camera snapshot ready";
+        displayMessage("assistant","📷 Camera snapshot captured and attached. Ask RAIZEN what it sees.");
+        stopLiveSightCamera();
+        closeLiveSight();
+        document.getElementById("messageInput").focus();
+    }catch(error){
+        if(status)status.textContent="Could not capture the frame. Try again.";
+    }
+}
+function closeLiveSight(){
+    stopLiveSightCamera();
+    const panel=document.getElementById("liveSightPanel");
+    if(panel)panel.classList.remove("open");
+}
+window.addEventListener("pagehide",stopLiveSightCamera);
 
 async function sendVisionMessage(question, signal) {
     const formData = new FormData();
