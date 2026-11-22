@@ -5399,7 +5399,7 @@ async def generate_image(request: ImageRequest):
     # Upgrade simple prompts into a richer visual brief without changing the user's subject.
     enhanced_prompt = (
         prompt
-        + "\\n\\nVisual quality direction: create a polished, high-quality image with clear subject focus, "
+        + "\n\nVisual quality direction: create a polished, high-quality image with clear subject focus, "
         + "intentional composition, realistic lighting and shadows, refined color harmony, rich but natural detail, "
         + "clean edges, coherent perspective, and professional art direction. Avoid clutter and visual artifacts. "
         + "Follow the requested style exactly; do not add text, logos, or watermarks unless requested."
@@ -5472,7 +5472,7 @@ async def edit_image(
 
         edit_prompt = (
             prompt
-            + "\\n\\nEditing quality direction: preserve the original subject identity and important details, "
+            + "\n\nEditing quality direction: preserve the original subject identity and important details, "
             + "apply the requested change cleanly, maintain natural lighting, coherent edges, and professional "
             + "composition. Do not introduce extra text, logos, or watermarks unless requested."
         )
