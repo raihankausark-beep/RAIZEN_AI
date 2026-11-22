@@ -297,6 +297,7 @@ MAX_DOCUMENT_CONTEXT_CHARS = 120000
 client = InferenceClient(api_key=HF_TOKEN)
 
 VISION_MODEL = (os.getenv("GEMINI_VISION_MODEL") or GEMINI_MODEL or "gemini-3.8-flash").strip()
+HF_VISION_MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
 VISION_FALLBACK_MODELS = list(dict.fromkeys([VISION_MODEL, GEMINI_MODEL, GEMINI_FAST_MODEL, "gemini-3.8-flash", "gemini-3.5-flash-lite"]))
 
 vision_client = InferenceClient(api_key=HF_TOKEN)
@@ -4732,7 +4733,7 @@ async def workspace_overview(request: Request, token: str = ""):
             "database": "connected",
             "models": {
                 "chat": {"name": GEMINI_FAST_MODEL, "configured": bool(GEMINI_API_KEY)},
-                "vision": {"name": VISION_MODEL, "configured": bool(HF_TOKEN)},
+                "vision": {"name": VISION_MODEL + (" + HF fallback" if HF_TOKEN else ""), "configured": bool(GEMINI_API_KEY or HF_TOKEN)},
                 "image_generation": {"name": IMAGE_MODEL, "configured": bool(HF_TOKEN)},
                 "image_editing": {"name": IMAGE_EDIT_MODEL, "configured": bool(HF_TOKEN)}
             },
@@ -4971,14 +4972,14 @@ async def vision(file: UploadFile = File(...), question: str = Form(""), token: 
                     }
                 ]
                 response = vision_client.chat.completions.create(
-                    model=VISION_MODEL,
+                    model=HF_VISION_MODEL,
                     messages=messages,
                     max_tokens=1000
                 )
                 reply = response.choices[0].message.content
                 if reply:
                     await asyncio.to_thread(record_usage_event, username, "vision")
-                    return {"reply": reply, "model": VISION_MODEL}
+                    return {"reply": reply, "model": HF_VISION_MODEL}
             except Exception as error:
                 print(f"RAIZEN HUGGINGFACE VISION FALLBACK ERROR: {type(error).__name__}: {error}", flush=True)
 
