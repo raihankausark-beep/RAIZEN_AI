@@ -144,6 +144,7 @@ async def auth_callback(request: Request):
         "sub": user.get("sub"),
         "name": user.get("name"),
         "email": user.get("email"),
+        "email_verified": bool(user.get("email_verified", False)),
         "picture": user.get("picture"),
     }
 
@@ -4198,7 +4199,8 @@ def is_admin_request(request: Request) -> bool:
             return False
         user = request.session.get("user") or {}
         email = (user.get("email") or "").strip().lower()
-        return bool(email and email == ADMIN_EMAIL)
+        email_verified = user.get("email_verified") is True
+        return bool(email and email_verified and email == ADMIN_EMAIL)
     except Exception as error:
         print("ADMIN AUTH CHECK ERROR:", error)
         return False
