@@ -1864,6 +1864,51 @@ body[data-theme="light"] .preferences-card select,body[data-theme="light"] .pref
 body[data-theme="ocean"] .brand-pill{border-color:rgba(54,198,211,.4);box-shadow:0 0 24px rgba(54,198,211,.13)}
 body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shadow:0 0 24px rgba(167,139,250,.13)}
 
+/* RAIZEN — refined dark futuristic interface */
+:root{--bg:#06090f;--panel:#0c111a;--panel2:#111925;--accent:#77d9e8;--raizen-cyan:#77d9e8;--raizen-violet:#8b93b8;--raizen-glass:rgba(11,16,24,.94)}
+html,body,.container{background:#06090f;color:#e7edf4}
+.container{background:radial-gradient(ellipse at 50% -20%,rgba(68,111,141,.12),transparent 46%),linear-gradient(145deg,#06090f,#090e16 52%,#070b12)}
+.container::before{opacity:.10;background-size:56px 56px;background-image:linear-gradient(rgba(119,217,232,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(119,217,232,.07) 1px,transparent 1px)}
+.container::after{opacity:.25;filter:blur(36px);animation:none}
+.topbar{background:rgba(6,9,15,.96);border-bottom:1px solid #1a2531;box-shadow:none;backdrop-filter:blur(14px)}
+.icon-btn{background:#101721;border:1px solid #263342;border-radius:12px;box-shadow:none}
+.icon-btn:hover{background:#141f2b;border-color:#4a7889;box-shadow:0 0 12px rgba(119,217,232,.06)}
+.brand-pill{background:#0d1721;color:#a9e6ef;border:1px solid #2a4657;box-shadow:none;border-radius:12px;letter-spacing:1.6px}
+.brand-pill::after{animation:none;display:none}
+.top-right .status{border-color:#23483b;background:#0b1714;color:#a8d8c2}
+.top-right .status::before{box-shadow:none;animation:none}
+.hero{margin-top:6vh;border-radius:20px;border:1px solid #202c39;background:rgba(11,16,24,.76);box-shadow:0 24px 55px rgba(0,0,0,.25);backdrop-filter:blur(10px)}
+.hero::before{border-radius:7px;border-color:#2a4657;background:#101c27;color:#9edbe6;letter-spacing:1.25px}
+.hero-title{background:linear-gradient(90deg,#edf3f7,#9bc8d5 58%,#b5bfd1);-webkit-background-clip:text;background-clip:text;text-shadow:none;letter-spacing:-1.4px}
+.hero-subtitle{color:#8d9cac}
+.prompt-card{background:#101721;border-color:#202d3a;box-shadow:none;color:#c5d0dc;backdrop-filter:none}
+.prompt-card strong{color:#e6edf5}
+.prompt-card:hover{background:#131e29;border-color:#456477;box-shadow:0 6px 18px rgba(0,0,0,.18);transform:translateY(-1px)}
+.message{box-shadow:none;border-radius:14px}
+.user{background:#111d2a;border-color:#283a4d}
+.assistant{background:#0c121a;border-color:#202b37}
+.composer-wrap{background:linear-gradient(to top,#06090f 75%,rgba(6,9,15,.96) 88%,transparent)}
+.input-area{background:#0d141d;border:1px solid #293747;box-shadow:0 12px 28px rgba(0,0,0,.28);backdrop-filter:blur(12px)}
+#messageInput{color:#eaf1f7}
+#messageInput::placeholder{color:#758596}
+.circle-btn{background:#111b26;border:1px solid #29394b}
+.circle-btn:hover{background:#162331;box-shadow:none}
+#sendButton{background:linear-gradient(135deg,#5bb8cb,#5685bb);box-shadow:none}
+#sendButton:hover{filter:brightness(1.08);box-shadow:none}
+.tool-chip{background:#101720;border-color:#263442;color:#aab8c8}
+.tool-chip:hover{background:#14202b;border-color:#3c5a6e}
+.history-drawer{background:#080d14;border-right:1px solid #263443;backdrop-filter:blur(18px)}
+.history-item,.history-tool-btn,.new-chat-history,.clear-history-btn{background:#101721;border-color:#202e3c}
+.history-item:hover,.history-tool-btn:hover,.new-chat-history:hover,.clear-history-btn:hover{border-color:#405d70;box-shadow:none}
+.preferences-card{background:#0d141d;border-color:#2a3949;box-shadow:0 25px 70px rgba(0,0,0,.6)}
+.preferences-card select,.preferences-card textarea,.history-search{background:#080e15;border-color:#293849}
+.preferences-card select:focus,.preferences-card textarea:focus,.history-search:focus{border-color:#55788b;box-shadow:0 0 0 2px rgba(119,217,232,.06)}
+.preferences-actions .preferences-save{background:#183041;border-color:#35566a;box-shadow:none}
+.account-menu{background:#0b121a;border-color:#273748;backdrop-filter:blur(18px)}
+.account-menu button:hover{background:#14212c}
+.message-action-btn{background:#101721;border-color:#253341;color:#aebbc9;border-radius:8px}
+.message-action-btn:hover{background:#15202a}
+@media(max-width:650px){.hero{margin-top:4vh;padding:22px 12px 16px;border-radius:18px}}
 </style>
 </head>
 <body>
@@ -2780,9 +2825,11 @@ function applyRaizenTheme() {
     if(meta) meta.content=raizenCurrentTheme==="light"?"#f4f6fa":raizenCurrentTheme==="ocean"?"#061216":raizenCurrentTheme==="violet"?"#100b1c":"#000000";
 }
 function cycleTheme() {
-    raizenCurrentTheme="dark";
-    localStorage.setItem("raizen_theme_"+loggedInUsername.toLowerCase(),"dark");
+    const themes=["dark","light","ocean","violet"];
+    raizenCurrentTheme=themes[(themes.indexOf(raizenCurrentTheme)+1)%themes.length];
+    localStorage.setItem("raizen_theme_"+loggedInUsername.toLowerCase(),raizenCurrentTheme);
     applyRaizenTheme();
+    alert("RAIZEN theme: "+raizenCurrentTheme.charAt(0).toUpperCase()+raizenCurrentTheme.slice(1));
 }
 function openCodeStudio() { renderCodeSnippets(); const modal=document.getElementById("codeStudioModal"); if(modal){modal.classList.add("open");modal.setAttribute("aria-hidden","false");} }
 function closeCodeStudio() { const modal=document.getElementById("codeStudioModal"); if(modal){modal.classList.remove("open");modal.setAttribute("aria-hidden","true");} }
@@ -5412,50 +5459,3 @@ async def health():
         "image_model": IMAGE_MODEL,
         "image_edit_model": IMAGE_EDIT_MODEL
     }
-
-/* RAIZEN — refined dark futuristic interface */
-:root{--bg:#06090f;--panel:#0c111a;--panel2:#111925;--accent:#77d9e8;--raizen-cyan:#77d9e8;--raizen-violet:#8b93b8;--raizen-glass:rgba(11,16,24,.94)}
-html,body,.container{background:#06090f;color:#e7edf4}
-.container{background:radial-gradient(ellipse at 50% -20%,rgba(68,111,141,.12),transparent 46%),linear-gradient(145deg,#06090f,#090e16 52%,#070b12)}
-.container::before{opacity:.10;background-size:56px 56px;background-image:linear-gradient(rgba(119,217,232,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(119,217,232,.07) 1px,transparent 1px)}
-.container::after{opacity:.25;filter:blur(36px);animation:none}
-.topbar{background:rgba(6,9,15,.96);border-bottom:1px solid #1a2531;box-shadow:none;backdrop-filter:blur(14px)}
-.icon-btn{background:#101721;border:1px solid #263342;border-radius:12px;box-shadow:none}
-.icon-btn:hover{background:#141f2b;border-color:#4a7889;box-shadow:0 0 12px rgba(119,217,232,.06)}
-.brand-pill{background:#0d1721;color:#a9e6ef;border:1px solid #2a4657;box-shadow:none;border-radius:12px;letter-spacing:1.6px}
-.brand-pill::after{animation:none;display:none}
-.top-right .status{border-color:#23483b;background:#0b1714;color:#a8d8c2}
-.top-right .status::before{box-shadow:none;animation:none}
-.hero{margin-top:6vh;border-radius:20px;border:1px solid #202c39;background:rgba(11,16,24,.76);box-shadow:0 24px 55px rgba(0,0,0,.25);backdrop-filter:blur(10px)}
-.hero::before{border-radius:7px;border-color:#2a4657;background:#101c27;color:#9edbe6;letter-spacing:1.25px}
-.hero-title{background:linear-gradient(90deg,#edf3f7,#9bc8d5 58%,#b5bfd1);-webkit-background-clip:text;background-clip:text;text-shadow:none;letter-spacing:-1.4px}
-.hero-subtitle{color:#8d9cac}
-.prompt-card{background:#101721;border-color:#202d3a;box-shadow:none;color:#c5d0dc;backdrop-filter:none}
-.prompt-card strong{color:#e6edf5}
-.prompt-card:hover{background:#131e29;border-color:#456477;box-shadow:0 6px 18px rgba(0,0,0,.18);transform:translateY(-1px)}
-.message{box-shadow:none;border-radius:14px}
-.user{background:#111d2a;border-color:#283a4d}
-.assistant{background:#0c121a;border-color:#202b37}
-.composer-wrap{background:linear-gradient(to top,#06090f 75%,rgba(6,9,15,.96) 88%,transparent)}
-.input-area{background:#0d141d;border:1px solid #293747;box-shadow:0 12px 28px rgba(0,0,0,.28);backdrop-filter:blur(12px)}
-#messageInput{color:#eaf1f7}
-#messageInput::placeholder{color:#758596}
-.circle-btn{background:#111b26;border:1px solid #29394b}
-.circle-btn:hover{background:#162331;box-shadow:none}
-#sendButton{background:linear-gradient(135deg,#5bb8cb,#5685bb);box-shadow:none}
-#sendButton:hover{filter:brightness(1.08);box-shadow:none}
-.tool-chip{background:#101720;border-color:#263442;color:#aab8c8}
-.tool-chip:hover{background:#14202b;border-color:#3c5a6e}
-.history-drawer{background:#080d14;border-right:1px solid #263443;backdrop-filter:blur(18px)}
-.history-item,.history-tool-btn,.new-chat-history,.clear-history-btn{background:#101721;border-color:#202e3c}
-.history-item:hover,.history-tool-btn:hover,.new-chat-history:hover,.clear-history-btn:hover{border-color:#405d70;box-shadow:none}
-.preferences-card{background:#0d141d;border-color:#2a3949;box-shadow:0 25px 70px rgba(0,0,0,.6)}
-.preferences-card select,.preferences-card textarea,.history-search{background:#080e15;border-color:#293849}
-.preferences-card select:focus,.preferences-card textarea:focus,.history-search:focus{border-color:#55788b;box-shadow:0 0 0 2px rgba(119,217,232,.06)}
-.preferences-actions .preferences-save{background:#183041;border-color:#35566a;box-shadow:none}
-.account-menu{background:#0b121a;border-color:#273748;backdrop-filter:blur(18px)}
-.account-menu button:hover{background:#14212c}
-.message-action-btn{background:#101721;border-color:#253341;color:#aebbc9;border-radius:8px}
-.message-action-btn:hover{background:#15202a}
-@media(max-width:650px){.hero{margin-top:4vh;padding:22px 12px 16px;border-radius:18px}}
-
