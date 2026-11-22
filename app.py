@@ -1990,7 +1990,7 @@ body[data-theme="violet"] .brand-pill{border-color:rgba(167,139,250,.4);box-shad
         <div id="liveSightStatus" class="live-sight-status">Camera is off.</div>
         <div class="live-sight-actions">
           <button type="button" class="control" id="liveSightStart" onclick="startLiveSightCamera()">Start camera</button>
-          <button type="button" class="control live-sight-capture" id="liveSightCapture" onclick="captureLiveSightFrame()" disabled>Capture &amp; analyze</button>
+          <button type="button" class="control live-sight-capture" id="liveSightCapture" onclick="captureLiveSightFrame()" disabled>Capture frame</button>
           <button type="button" class="control" onclick="closeLiveSight()">Close</button>
         </div>
       </div>
@@ -2460,6 +2460,8 @@ function stopLiveSightCamera(){
     if(video)video.srcObject=null;
     if(start){start.disabled=false;start.textContent="Start camera";}
     if(capture)capture.disabled=true;
+    const status=document.getElementById("liveSightStatus");
+    if(status)status.textContent="Camera is off.";
 }
 async function captureLiveSightFrame(){
     const video=document.getElementById("liveSightVideo");
