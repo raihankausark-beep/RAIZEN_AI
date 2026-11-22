@@ -4581,7 +4581,9 @@ def reserve_daily_usage(username: str, event_type: str, daily_limit: int):
     normalized = (username or "").strip().lower()
     if not normalized:
         return False, 0, None
-    if ADMIN_EMAIL and normalized == ADMIN_EMAIL:
+    admin_username = (os.getenv("ADMIN_USERNAME") or "").strip().lower()
+    admin_identifiers = {value for value in (ADMIN_EMAIL, admin_username) if value}
+    if normalized in admin_identifiers:
         return True, daily_limit, None
 
     try:
