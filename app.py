@@ -296,7 +296,8 @@ MAX_DOCUMENT_CONTEXT_CHARS = 120000
 
 client = InferenceClient(api_key=HF_TOKEN)
 
-VISION_MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
+VISION_MODEL = (os.getenv("GEMINI_VISION_MODEL") or GEMINI_MODEL or "gemini-3.8-flash").strip()
+VISION_FALLBACK_MODELS = list(dict.fromkeys([VISION_MODEL, GEMINI_MODEL, GEMINI_FAST_MODEL, "gemini-3.8-flash", "gemini-3.5-flash-lite"]))
 
 vision_client = InferenceClient(api_key=HF_TOKEN)
 
@@ -4884,85 +4885,110 @@ async def vision(file: UploadFile = File(...), question: str = Form(""), token: 
     username = await asyncio.to_thread(get_authenticated_username, token)
     if not username:
         return {"error": "Please log in to use Vision."}
-    filename = file.filename or "image"
-    content_type = file.content_type or ""
 
-    allowed_types = {
-        "image/png": "png",
-        "image/jpeg": "jpeg",
-        "image/webp": "webp"
-    }
-
+    content_type = (file.content_type or "").lower().strip()
+    allowed_types = {"image/png", "image/jpeg", "image/webp"}
     if content_type not in allowed_types:
-        return {
-            "error": "Unsupported image type. Please use PNG, JPG/JPEG, or WEBP."
-        }
+        return {"error": "Unsupported image type. Please use PNG, JPG/JPEG, or WEBP."}
 
     try:
         raw_bytes = await file.read(MAX_IMAGE_BYTES + 1)
-
         if len(raw_bytes) > MAX_IMAGE_BYTES:
             return {"error": "Image is too large. Maximum size is 12 MB."}
+        if not raw_bytes:
+            return {"error": "The image file is empty. Please choose another image."}
 
-        encoded = base64.b64encode(raw_bytes).decode("utf-8")
-        data_url = f"data:{content_type};base64,{encoded}"
+        user_question = question.strip() or (
+            "Describe this image clearly. Mention important visible details and "
+            "read any clearly visible text when possible."
+        )
+        encoded = base64.b64encode(raw_bytes).decode("ascii")
 
-        user_question = question.strip()
-        if not user_question:
-            user_question = (
-                "Describe this image clearly. Mention important visible details "
-                "and read any clearly visible text when possible."
-            )
+        # Prefer Gemini's native multimodal REST API, rather than the older
+        # Hugging Face inference route which may not serve the selected model.
+        gemini_errors = []
+        if GEMINI_API_KEY:
+            for model_name in VISION_FALLBACK_MODELS:
+                try:
+                    payload = json.dumps({
+                        "contents": [{
+                            "parts": [
+                                {"inline_data": {"mime_type": content_type, "data": encoded}},
+                                {"text": user_question}
+                            ]
+                        }],
+                        "generationConfig": {
+                            "maxOutputTokens": 1000,
+                            "temperature": 0.3
+                        }
+                    }).encode("utf-8")
+                    req = URLRequest(
+                        f"https://generativelanguage.googleapis.com/v1beta/models/{quote(model_name, safe='')}:generateContent",
+                        data=payload,
+                        headers={
+                            "Content-Type": "application/json",
+                            "x-goog-api-key": GEMINI_API_KEY,
+                            "User-Agent": "RAIZEN-AI/3.0"
+                        },
+                        method="POST"
+                    )
+                    with urlopen(req, timeout=60) as response:
+                        result = json.loads(response.read().decode("utf-8"))
+                    candidates = result.get("candidates") or []
+                    parts = (candidates[0].get("content", {}).get("parts", []) if candidates else [])
+                    reply = "\n".join(
+                        str(part.get("text", "")).strip()
+                        for part in parts
+                        if isinstance(part, dict) and part.get("text")
+                    ).strip()
+                    if reply:
+                        await asyncio.to_thread(record_usage_event, username, "vision")
+                        return {"reply": reply, "model": model_name}
+                    gemini_errors.append(f"{model_name}: empty model response")
+                except Exception as error:
+                    gemini_errors.append(f"{model_name}: {type(error).__name__}: {error}")
+                    print(f"RAIZEN GEMINI VISION ERROR ({model_name}): {type(error).__name__}: {error}", flush=True)
 
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are RAIZEN's vision assistant. Analyze the supplied image "
-                    "carefully. Be accurate, concise, and do not invent details. "
-                    "If text is blurry or unreadable, say so."
-                )
-            },
-            {
-                "role": "user",
-                "content": [
+        # Optional fallback to the existing Hugging Face provider if configured.
+        if HF_TOKEN:
+            try:
+                data_url = f"data:{content_type};base64,{encoded}"
+                messages = [
                     {
-                        "type": "image_url",
-                        "image_url": {"url": data_url}
+                        "role": "system",
+                        "content": (
+                            "You are RAIZEN's vision assistant. Analyze the supplied image "
+                            "carefully. Be accurate, concise, and do not invent details. "
+                            "If text is blurry or unreadable, say so."
+                        )
                     },
                     {
-                        "type": "text",
-                        "text": user_question
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url", "image_url": {"url": data_url}},
+                            {"type": "text", "text": user_question}
+                        ]
                     }
                 ]
-            }
-        ]
+                response = vision_client.chat.completions.create(
+                    model=VISION_MODEL,
+                    messages=messages,
+                    max_tokens=1000
+                )
+                reply = response.choices[0].message.content
+                if reply:
+                    await asyncio.to_thread(record_usage_event, username, "vision")
+                    return {"reply": reply, "model": VISION_MODEL}
+            except Exception as error:
+                print(f"RAIZEN HUGGINGFACE VISION FALLBACK ERROR: {type(error).__name__}: {error}", flush=True)
 
-        response = vision_client.chat.completions.create(
-            model=VISION_MODEL,
-            messages=messages,
-            max_tokens=1000
-        )
-
-        reply = response.choices[0].message.content
-
-        if not reply:
-            return {"error": "The vision model returned an empty response."}
-        await asyncio.to_thread(record_usage_event, username, "vision")
-
-        return {
-            "reply": reply,
-            "model": VISION_MODEL
-        }
-
+        print("RAIZEN VISION FAILED: no configured provider returned a usable response.", flush=True)
+        if not GEMINI_API_KEY and not HF_TOKEN:
+            return {"error": "Vision is not configured on the server. Please contact the administrator."}
+        return {"error": "Vision is temporarily unavailable after trying the configured providers. Please try again later."}
     except Exception as error:
-        print("VISION ERROR:", error)
-        return {
-            "error": (
-                "Vision is temporarily unavailable. "
-                "Please try the image again."
-            )
-        }
+        print("VISION ERROR:", type(error).__name__, error, flush=True)
+        return {"error": "Image analysis failed. Please try a smaller or different image."}
 
 
 @app.post("/chat")
