@@ -3301,7 +3301,10 @@ function looksLikeImageRequest(text) {
         "image", "picture", "photo", "poster", "logo", "wallpaper",
         "illustration", "artwork", "banner", "thumbnail", "portrait",
         "icon", "cover", "flyer", "diagram", "infographic", "drawing",
-        "scene", "character", "mascot", "sticker", "comic"
+        "scene", "character", "mascot", "sticker", "comic",
+        "sky", "sunset", "sunrise", "clouds", "landscape", "scenery",
+        "mountain", "ocean", "beach", "forest", "cityscape", "building",
+        "flower", "animal", "car", "room", "space", "galaxy"
     ];
 
     const imageVerbs = [
