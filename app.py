@@ -5396,17 +5396,32 @@ async def generate_image(request: ImageRequest):
     if not image_allowed:
         return {"error": "You've reached your daily image creation limit (3 images per 24 hours). Please try again later."}
 
-    # Upgrade simple prompts into a richer visual brief without changing the user's subject.
+    # Expand the user's request into a production-style art direction brief while
+    # preserving the requested subject, style, and any explicit constraints.
     enhanced_prompt = (
-        prompt
-        + "\n\nVisual quality direction: create a polished, high-quality image with clear subject focus, "
-        + "intentional composition, realistic lighting and shadows, refined color harmony, rich but natural detail, "
-        + "clean edges, coherent perspective, and professional art direction. Avoid clutter and visual artifacts. "
-        + "Follow the requested style exactly; do not add text, logos, or watermarks unless requested."
+        "Create the image described in the user's brief below. Treat the user's subject, "
+        "named objects, requested style, and explicit constraints as authoritative. Do not "
+        "replace the subject or invent extra people, objects, logos, or text.\n\n"
+        "USER BRIEF:\n" + prompt +
+        "\n\nPRODUCTION ART DIRECTION:\n"
+        "Build a clear visual hierarchy with one unmistakable focal subject. Use a deliberate "
+        "camera/viewpoint and balanced framing; organize foreground, middle ground, and background "
+        "only when appropriate. Give the scene coherent perspective, believable scale, accurate "
+        "anatomy and object geometry, clean silhouettes, and consistent spatial relationships. "
+        "Use intentional lighting with natural falloff, dimensional shadows, controlled highlights, "
+        "and a cohesive color palette. Render materials with convincing texture and fine detail "
+        "without oversharpening or visual noise. Keep the background supportive rather than busy. "
+        "Match the exact medium and style requested (photorealistic, cinematic, illustration, "
+        "3D, anime, graphic design, or another stated style); do not force photorealism when it "
+        "was not requested. If typography is requested, make the exact supplied wording legible, "
+        "correctly spelled, and visually integrated. Otherwise, avoid text. Deliver a polished, "
+        "intentional, high-quality final composition with no watermark."
     )
     default_negative = (
-        "low resolution, blurry, noisy, poorly composed, distorted perspective, malformed details, "
-        "artifacts, clutter, watermark, unwanted text"
+        "low resolution, blur, pixelation, compression artifacts, excessive noise, oversharpening, "
+        "poor composition, confusing focal point, unwanted extra subjects, duplicated objects, "
+        "inconsistent perspective, malformed anatomy, extra fingers, distorted faces, warped geometry, "
+        "muddy colors, harsh unintended glare, clutter, random lettering, misspelled text, watermark, logo"
     )
     try:
         image = image_client.text_to_image(
